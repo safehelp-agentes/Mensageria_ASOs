@@ -1,0 +1,21 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Credenciais
+service_account.json
+*.html
+# Estado em runtime (não versionar)
+data/pendentes.json
+data/erros_aso.json
+
+# Saídas geradas
+output/
+output.txt
+teste.txt
+
+# IDE / ferramentas locais
+.idea/
+.claude/settings.local.json

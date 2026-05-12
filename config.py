@@ -79,9 +79,3 @@ EMAIL_REMETENTE = (os.getenv("EMAIL_REMETENTE") or "").strip()
 EMAIL_SENHA_APP = (os.getenv("EMAIL_SENHA_APP") or "").strip()
 EMAIL_DESTINO   = (os.getenv("EMAIL_DESTINO") or "").strip()
 EMAIL_ENVIAR    = (os.getenv("EMAIL_ENVIAR") or "false").strip().lower() == "true"
-
-# ── Google Sheets ──────────────────────────────────────────────────────────────
-SHEETS_CREDENTIALS_FILE = (os.getenv("SHEETS_CREDENTIALS_FILE") or os.path.join(BASE_DIR, "service_account.json")).strip()
-SHEETS_SPREADSHEET_ID   = (os.getenv("SHEETS_SPREADSHEET_ID") or "").strip()
-SHEETS_ABA              = (os.getenv("SHEETS_ABA") or "ASOs").strip()
-SHEETS_ENVIAR           = (os.getenv("SHEETS_ENVIAR") or "true").strip().lower() == "true"

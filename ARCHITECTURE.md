@@ -27,14 +27,12 @@ Para visão de produto e como rodar, veja o [README.md](README.md).
 graph LR
     subgraph SafeWork["🖥️ VPS Hostinger — /opt/safework"]
         Cron[⏰ cron] --> Main[main.py]
-        Webhook[webhook_meta.py<br/>:8001]
     end
 
     subgraph Externos["☁️ Serviços externos"]
         SOC[(📋 SOC<br/>Exporta Dados + WS)]
         Meta[(💬 Meta Cloud API<br/>WhatsApp Business)]
         SB[(🗄️ Supabase<br/>PostgreSQL)]
-        Sheets[(📊 Google Sheets)]
         Gmail[(📧 Gmail SMTP)]
     end
 
@@ -46,12 +44,11 @@ graph LR
     Main -->|"1. lista empresas<br/>2. busca ASOs<br/>3. baixa PDFs"| SOC
     Main -->|"4. upload + send"| Meta
     Main -->|"5. persiste estado"| SB
-    Main -->|"6. log volumetria"| Sheets
-    Main -->|"7. relatório de erros"| Gmail
+    Main -->|"6. relatório de erros"| Gmail
     Meta -->|"PDFs"| Empresas
     Empresas -->|"respostas"| Meta
-    Meta -->|"webhook"| Webhook
-    Webhook -->|"insert inbound"| SB
+    Meta -->|"webhook"| N8N[n8n]
+    N8N -->|"insert inbound"| SB
     SB -->|"select realtime"| CRM
 ```
 
@@ -59,7 +56,7 @@ graph LR
 
 ## 2. Fluxo de execução do `main.py`
 
-Toda execução é determinística e segue **oito etapas numeradas explicitamente no código-fonte**:
+Toda execução é determinística e segue **sete etapas numeradas explicitamente no código-fonte**:
 
 ```mermaid
 flowchart TD
@@ -81,11 +78,10 @@ flowchart TD
     Guard -->|ok| Send[enviar_pdfs_empresa_meta<br/>1º PDF: template<br/>demais: documento]
     Send --> Mark[marcar_aso_enviado<br/>+ registrar_mensagem_outbound]
     Mark --> Loop
-    Loop -->|fim do laço| E7[7. registrar_no_sheets<br/>volumetria por empresa]
+    Loop -->|fim do laço| E7[7. salvar resumo<br/>output/saida_asos/resumo_execucao.json]
     Abort --> Erro[registrar_erro]
     Erro --> Loop
-    E7 --> E8[8. salvar resumo<br/>output/saida_asos/resumo_execucao.json]
-    E8 --> Email[enviar_email_erros<br/>se houver erros]
+    E7 --> Email[enviar_email_erros<br/>se houver erros]
     Email --> End([✅ fim])
 
     style Abort fill:#fee,stroke:#c33,stroke-width:2px
@@ -97,7 +93,6 @@ flowchart TD
     style E5 fill:#eef
     style E6 fill:#eef
     style E7 fill:#eef
-    style E8 fill:#eef
 ```
 
 > 📌 Cada caixa azul é uma etapa numerada explicitamente no `main.py`. Use os números (`# ── N. Descrição ──`) para localizar.
@@ -165,10 +160,8 @@ graph TB
         Meta[src/meta/whatsapp.py<br/>💬 Meta API]
         Int[src/integrations/]
         SBint[supabase.py]
-        Shint[sheets.py]
         Emint[email.py]
         Int --> SBint
-        Int --> Shint
         Int --> Emint
     end
 
@@ -355,27 +348,24 @@ Implementado em `src/meta/whatsapp.py:enviar_pdfs_empresa_meta`. Se o primeiro e
 
 ## 8. Webhook inbound (Meta → CRM)
 
-Mensagens que as empresas mandam de volta passam por **um dos dois caminhos** (não os dois):
+Mensagens que as empresas mandam de volta chegam via **n8n**:
 
 ```mermaid
 graph LR
     Empresa[🏢 Empresa] -->|envia WhatsApp| Meta[(Meta API)]
-    Meta -->|webhook callback| Choice{Qual entrada<br/>está ativa?}
-    Choice -->|opção A| Webhook[webhook_meta.py<br/>:8001]
-    Choice -->|opção B| N8N[n8n workflow]
-    Webhook -->|INSERT mensagens| SB[(Supabase)]
-    N8N -->|INSERT mensagens| SB
-    SB -->|poll 8s| CRM[chat.html]
+    Meta -->|webhook callback POST| N8N[n8n workflow]
+    N8N -->|INSERT mensagens| SB[(Supabase)]
+    SB -->|poll 30s| CRM[index.html]
 ```
 
-Os dois fazem essencialmente a mesma coisa:
+O fluxo n8n:
 
-1. Valida o `verify_token` no GET inicial da Meta.
-2. No POST do callback, valida HMAC SHA256 (opcional) e o `phone_number_id` (filtro de segurança — ignora mensagens de outros números do mesmo app).
-3. Tenta resolver o número remetente em `empresas.telefone` para preencher `codigo_empresa` e `nome_empresa`.
-4. Insere em `mensagens` com `direcao=inbound`.
+1. Responde `200 OK` imediatamente (evita timeout da Meta).
+2. Verifica se o payload contém `messages` (filtra status updates).
+3. Extrai `from`, `wamid`, `timestamp`, `type`, `body` da mensagem.
+4. Faz POST em `/rest/v1/mensagens` com `direcao=inbound`.
 
-**Decisão a tomar em produção**: manter `webhook_meta.py` (servidor Python nativo, sem dependências) **ou** o n8n (mais visual, mais fácil de ramificar com lógica adicional). Não rodar os dois simultaneamente apontando para o mesmo número — dupliça as mensagens.
+Para registrar o webhook no Meta: no painel do app → WhatsApp → Configuration → Callback URL aponte para a URL do n8n (`https://<seu-n8n>/webhook/meta-webhook`).
 
 ---
 
@@ -429,16 +419,6 @@ Resultado: **mesmo em crash catastrófico**, o relatório de erros sai.
 ### Por que Português no código?
 
 Domínio fortemente brasileiro: SOC, ASO, CNPJ, ESocial. Traduzir vira "Health Certificate" e perde o significado. Os campos da API do SOC já vêm em português (`EMPRESA_CONSULTADA`, `DT_EMISSAO`, `CD_GED`), então a base já está nesse idioma — misturar seria pior.
-
-### Por que JWT manual no Sheets em vez de `google-auth`?
-
-Para manter o `requirements.txt` minúsculo (3 libs). Service Account JWT é simples: header + payload + RSA-SHA256, e `cryptography` já estava lá para outra coisa. Adicionar `google-auth` traria dezenas de dependências transitivas para uma função.
-
-### Por que `http.server` nativo no webhook?
-
-Mesmo motivo. O endpoint tem três coisas: validar token, validar HMAC, fazer INSERT. FastAPI + uvicorn + Pydantic seria over-engineering para 95 linhas.
-
-> Quando o webhook crescer (filas, validações complexas, múltiplos endpoints), migrar para FastAPI vale a pena. **Está no roadmap**.
 
 ### Por que PostgREST direto em vez do client `supabase-py`?
 

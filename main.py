@@ -27,7 +27,6 @@ from src.soc.api import (
 from src.meta.whatsapp import (
     enviar_pdfs_empresa_meta, enviar_teste_sem_aso_meta, resolver_destino_envio,
 )
-from src.integrations.sheets import registrar_no_sheets, montar_linhas_sheets
 from src.integrations.email import enviar_email_erros
 from src.integrations.supabase import (
     upsert_empresa,
@@ -267,10 +266,7 @@ def main(usar_ontem: bool = False, data_especifica: str | None = None):
     # ── 7. Revisita pendentes de execuções anteriores ─────────────────────────
     resumo += _reprocessar_pendentes(chaves_enviadas)
 
-    # ── 8. Registra volumetria no Google Sheets ───────────────────────────────
-    registrar_no_sheets(montar_linhas_sheets(resumo, data_consulta))
-
-    # ── 9. Salva resumo e exibe totais ────────────────────────────────────────
+    # ── 8. Salva resumo e exibe totais ────────────────────────────────────────
     resumo_path = os.path.join(PASTA_SAIDA_LISTAGEM, "resumo_execucao.json")
     with open(resumo_path, "w", encoding="utf-8") as f:
         json.dump(resumo, f, ensure_ascii=False, indent=2, default=str)

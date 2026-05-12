@@ -26,7 +26,7 @@ Toda execução repete o mesmo ciclo, atomicamente:
 5. **Baixa o PDF** via SOAP/WS-Security (resposta multipart MTOM). ZIPs são desempacotados automaticamente.
 6. **Resolve o destino** consultando os contatos da empresa no SOC.
 7. **Envia pelo WhatsApp Business (Meta Cloud API)** — primeiro PDF via template aprovado (abre a janela de 24h), demais como documento simples dentro da mesma conversa (sem custo extra).
-8. **Persiste o resultado** em três lugares: Supabase (`asos_enviados`, `mensagens`, `empresas`), Google Sheets (volumetria) e e-mail (relatório de erros).
+8. **Persiste o resultado** em dois lugares: Supabase (`asos_enviados`, `mensagens`, `empresas`) e e-mail (relatório de erros).
 
 > 📐 Para o fluxo completo com diagrama, integrações e contratos de dados, veja **[ARCHITECTURE.md](ARCHITECTURE.md)**.
 
@@ -40,7 +40,6 @@ Toda execução repete o mesmo ciclo, atomicamente:
 | Fonte dos ASOs | **SOC** (Web Service REST + SOAP/WS-Security) |
 | Mensageria | **Meta Cloud API** (WhatsApp Business v19.0) |
 | Banco / CRM | **Supabase** (PostgreSQL) |
-| Volumetria | **Google Sheets API** (Service Account + JWT) |
 | Alertas | **Gmail SMTP** |
 | Webhook inbound | **n8n** |
 | Deploy | **VPS Hostinger Ubuntu 24.04** · `systemd` + `docker compose` |
@@ -62,7 +61,6 @@ cryptography>=41.0.0
 - Acesso a uma conta SOC com chaves de Exporta Dados e WS Download
 - App Meta Business com template aprovado para envio de ASO
 - Projeto Supabase com as tabelas descritas em [ARCHITECTURE.md](ARCHITECTURE.md#5-modelo-de-dados-supabase)
-- Service Account do Google Cloud com permissão na planilha alvo
 
 ### Instalação
 
@@ -81,9 +79,6 @@ pip install -r requirements.txt
 # Configure as credenciais (veja .env.example)
 cp .env.example .env
 nano .env
-
-# Coloque o service_account.json do Google Cloud na raiz
-# (NÃO commitar — já está no .gitignore)
 ```
 
 ### Executando uma vez
@@ -141,15 +136,6 @@ Todas as variáveis vivem no `.env` na raiz. Use `.env.example` como ponto de pa
 | `SUPABASE_SECRET_KEY` | sim* | Service role key (chamada **secret key** na nova UI) |
 
 \* O pipeline funciona sem Supabase, mas perde controle de duplicatas e CRM.
-
-### Google Sheets
-
-| Variável | Obrigatório | Descrição |
-|---|---|---|
-| `SHEETS_CREDENTIALS_FILE` | não | Caminho do JSON da Service Account. Padrão `./service_account.json` |
-| `SHEETS_SPREADSHEET_ID` | sim* | ID da planilha (parte do URL entre `/d/` e `/edit`) |
-| `SHEETS_ABA` | não | Nome da aba. Padrão `ASOs` |
-| `SHEETS_ENVIAR` | não | `true`/`false`. Padrão `true` |
 
 ### E-mail (relatório de erros)
 
@@ -216,8 +202,6 @@ safework/
 ├── requirements.txt
 ├── .env                         # 🔒 NÃO commitado
 ├── .env.example                 # 📋 Template público das variáveis
-├── service_account.json         # 🔒 NÃO commitado (Google)
-│
 ├── src/
 │   ├── soc/
 │   │   ├── api.py              # Cliente REST do Exporta Dados
@@ -249,7 +233,6 @@ safework/
 │   │
 │   ├── integrations/
 │   │   ├── supabase.py         # REST PostgREST — empresas, asos_enviados, mensagens
-│   │   ├── sheets.py           # JWT manual + Sheets append
 │   │   └── email.py            # SMTP Gmail (relatório de erros)
 │   │
 │   └── utils/
@@ -281,8 +264,8 @@ safework/
 
 ```bash
 # Confirma que nada sensível foi commitado
-git ls-files | grep -E '\.env$|service_account|\.pem$|\.key$'
-git log --all --full-history --oneline -- .env service_account.json
+git ls-files | grep -E '\.env$|\.pem$|\.key$'
+git log --all --full-history --oneline -- .env
 ```
 
 ---

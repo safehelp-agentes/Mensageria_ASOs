@@ -57,6 +57,29 @@ def upsert_empresa(codigo: str, nome: str, cnpj: str = "", telefone: str = ""):
 
 # ── ASOs enviados ─────────────────────────────────────────
 
+def buscar_pendentes() -> list:
+    """Retorna registros com enviado=False do Supabase para revisita."""
+    if not SUPABASE_ATIVO:
+        return []
+    try:
+        resp = requests.get(
+            _url("asos_enviados"),
+            headers=_headers(),
+            params={
+                "enviado": "eq.false",
+                "select":  "chave_aso,codigo_empresa,nome_empresa,data_emissao",
+            },
+            timeout=15,
+        )
+        if resp.status_code >= 300:
+            print(f"[SUPABASE] Erro ao buscar pendentes: {resp.text[:200]}")
+            return []
+        return resp.json()
+    except Exception as e:
+        print(f"[SUPABASE] Erro ao buscar pendentes: {e}")
+        return []
+
+
 def buscar_chaves_enviadas() -> set:
     """Retorna set de chaves de ASOs com enviado=True no Supabase."""
     if not SUPABASE_ATIVO:

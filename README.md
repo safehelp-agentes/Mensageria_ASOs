@@ -42,7 +42,7 @@ Toda execução repete o mesmo ciclo, atomicamente:
 | Banco / CRM | **Supabase** (PostgreSQL) |
 | Volumetria | **Google Sheets API** (Service Account + JWT) |
 | Alertas | **Gmail SMTP** |
-| Webhook inbound | `http.server` nativo + (opcional) **n8n** |
+| Webhook inbound | **n8n** |
 | Deploy | **VPS Hostinger Ubuntu 24.04** · `systemd` + `docker compose` |
 
 **Dependências runtime** (`requirements.txt`):
@@ -212,7 +212,6 @@ safework/
 ├── main.py                      # 🎯 Orquestrador — fluxo completo em 8 etapas numeradas
 ├── config.py                    # 🔧 Carrega .env, expõe constantes globais
 ├── deploy.sh                    # 🚢 git pull + pip install + restart docker
-├── webhook_meta.py              # 📡 Servidor HTTP (porta 8001) para callbacks inbound da Meta
 ├── chat.html                    # 💬 CRM single-file (ver repositório do CRM)
 ├── requirements.txt
 ├── .env                         # 🔒 NÃO commitado
@@ -277,7 +276,6 @@ safework/
 - ✅ **Deduplicação por chave composta** `CD_EMPRESA|CD_GED|CD_ARQUIVO_GED` consultada no Supabase antes de cada envio.
 - ✅ **Retry com backoff exponencial** em todas as requisições HTTP (`_requisicao_com_retry`).
 - ✅ **WS-Security PasswordDigest** com nonce aleatório e timestamp de 5min para o SOAP do SOC.
-- ✅ **HMAC opcional** para validar callbacks da Meta no webhook.
 
 ### Auditoria rápida
 
@@ -300,7 +298,7 @@ git log --all --full-history --oneline -- .env service_account.json
 | `Erro envio template Meta: HTTP 400` | Template não aprovado ou nome errado em `META_TEMPLATE_NAME` | Painel da Meta → Templates |
 | `BLOQUEIO DE SEGURANÇA: empresa X usaria número real` | A trava está funcionando — não é bug | Ative `ENVIO_REAL_EMPRESAS=true` quando quiser produção |
 | `[SUPABASE] Erro upsert empresa` HTTP 401/403 | Secret key inválida ou RLS bloqueando | Confira chave em `supabase.com/dashboard/project/_/settings/api` |
-| Mensagens inbound não aparecem no CRM | Webhook não validou, ou `phone_number_id` não bate com `ASO_PHONE_NUMBER_ID` | Logs do `webhook_meta.py` ou n8n |
+| Mensagens inbound não aparecem no CRM | `phone_number_id` não bate com o configurado no n8n | Logs do n8n |
 
 ---
 
@@ -311,7 +309,6 @@ git log --all --full-history --oneline -- .env service_account.json
 - [ ] Containerizar o `main.py` em vez de rodar via cron + venv.
 - [ ] Retentativa automática de ASOs em status `pendente` quando passarem a `assinado=true`.
 - [ ] Métricas Prometheus + dashboard Grafana (envios/dia, taxa de erro, latência por etapa).
-- [ ] Substituir `webhook_meta.py` por endpoint FastAPI com validação Pydantic.
 
 ---
 

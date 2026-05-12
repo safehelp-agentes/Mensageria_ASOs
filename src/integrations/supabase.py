@@ -40,7 +40,8 @@ def upsert_empresa(codigo: str, nome: str, cnpj: str = "", telefone: str = ""):
     try:
         resp = requests.post(
             _url("empresas"),
-            headers={**_headers(), "Prefer": "resolution=merge-duplicates,return=minimal", "on-conflict": "codigo"},
+            headers={**_headers(), "Prefer": "resolution=merge-duplicates,return=minimal"},
+            params={"on_conflict": "codigo"},
             json={
                 "codigo":   codigo,
                 "nome":     nome,
@@ -66,8 +67,9 @@ def buscar_pendentes() -> list:
             _url("asos_enviados"),
             headers=_headers(),
             params={
-                "enviado": "eq.false",
-                "select":  "chave_aso,codigo_empresa,nome_empresa,data_emissao",
+                "enviado":  "eq.false",
+                "assinado": "eq.false",
+                "select":   "chave_aso,codigo_empresa,nome_empresa,data_emissao",
             },
             timeout=15,
         )
@@ -107,7 +109,8 @@ def registrar_aso_pendente(chave: str, reg: dict):
     try:
         resp = requests.post(
             _url("asos_enviados"),
-            headers={**_headers(), "Prefer": "resolution=ignore-duplicates,return=minimal", "on-conflict": "chave_aso"},
+            headers={**_headers(), "Prefer": "resolution=ignore-duplicates,return=minimal"},
+            params={"on_conflict": "chave_aso"},
             json={
                 "chave_aso":      chave,
                 "codigo_empresa": str(reg.get("EMPRESA_CONSULTADA", reg.get("CD_EMPRESA", ""))).strip(),
@@ -143,7 +146,8 @@ def marcar_aso_enviado(
     try:
         resp = requests.post(
             _url("asos_enviados"),
-            headers={**_headers(), "Prefer": "resolution=merge-duplicates,return=minimal", "on-conflict": "chave_aso"},
+            headers={**_headers(), "Prefer": "resolution=merge-duplicates,return=minimal"},
+            params={"on_conflict": "chave_aso"},
             json={
                 "chave_aso":      chave,
                 "codigo_empresa": codigo_empresa,

@@ -6,7 +6,7 @@ __pycache__/
 
 # Credenciais
 service_account.json
-*.html
+
 # Estado em runtime (não versionar)
 data/pendentes.json
 data/erros_aso.json

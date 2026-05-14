@@ -37,10 +37,10 @@ SOC_CHAVE_GED         = (os.getenv("SOC_CHAVE_GED") or "").strip()
 SOC_WS_USUARIO        = (os.getenv("SOC_WS_USUARIO") or "").strip()
 SOC_WS_PASSWORD       = (os.getenv("SOC_WS_PASSWORD") or "").strip()
 
-# Códigos fixos da conta SOC
-CODIGO_EMPRESA_PRINCIPAL = "289501"
-CODIGO_RESPONSAVEL       = "104404"
-CODIGO_USUARIO           = "3604573"
+# Códigos da integração SOC. Podem mudar quando o SOC reconfigura o usuário.
+CODIGO_EMPRESA_PRINCIPAL = (os.getenv("SOC_CODIGO_EMPRESA_PRINCIPAL") or SOC_EMPRESA_PRINCIPAL or "289501").strip()
+CODIGO_RESPONSAVEL       = (os.getenv("SOC_CODIGO_RESPONSAVEL") or "104404").strip()
+CODIGO_USUARIO           = (os.getenv("SOC_CODIGO_USUARIO") or "3604573").strip()
 
 # Códigos de exportação
 CODIGO_EXPORTA_EMPRESAS = "192392"
@@ -61,7 +61,7 @@ DELAY_ENTRE_REQUISICOES   = 0.2
 DELAY_ENTRE_DOWNLOADS     = 0.2
 ENVIO_REAL_EMPRESAS       = (os.getenv("ENVIO_REAL_EMPRESAS") or "false").strip().lower() == "true"
 
-EMPRESAS_PERMITIDAS: set = set()   # Vazio = todas. Ex: {"295569", "334567"}
+EMPRESAS_PERMITIDAS: set = set({"1338567"})   # Vazio = todas. Ex: {"295569", "334567"}
 LIMITE_EMPRESAS           = None   # None = sem limite. Ex: 5
 
 # ── Meta / WhatsApp ────────────────────────────────────────────────────────────

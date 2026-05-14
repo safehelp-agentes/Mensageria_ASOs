@@ -5,6 +5,7 @@ import base64
 import hashlib
 import email
 import re
+import time
 import requests
 from datetime import datetime, timedelta, timezone
 from xml.etree import ElementTree as ET
@@ -14,24 +15,27 @@ from config import (
     CODIGO_EMPRESA_PRINCIPAL, CODIGO_RESPONSAVEL, CODIGO_USUARIO,
     PASTA_DEBUG,
 )
-from src.utils.helpers import _requisicao_com_retry, formatar_data_ws, payload_tipo
+from src.utils.helpers import formatar_data_ws, payload_tipo
 
 
 # ── WS-Security ────────────────────────────────────────────────────────────────
 
-def gerar_wsse_password_digest() -> dict:
+def gerar_wsse_password_digest(usuario: str | None = None) -> dict:
+    usuario_ws = usuario or SOC_WS_USUARIO
+
     nonce_bytes = os.urandom(16)
     nonce_b64   = base64.b64encode(nonce_bytes).decode("utf-8")
 
     agora   = datetime.now(timezone.utc)
     created = formatar_data_ws(agora)
-    expires = formatar_data_ws(agora + timedelta(minutes=5))
+    expires = formatar_data_ws(agora + timedelta(minutes=1))
 
     digest = hashlib.sha1(
         nonce_bytes + created.encode("utf-8") + SOC_WS_PASSWORD.encode("utf-8")
     ).digest()
 
     return {
+        "usuario":        usuario_ws,
         "nonce":          nonce_b64,
         "created":        created,
         "expires":        expires,
@@ -55,7 +59,7 @@ def montar_xml_download_por_lote(cd_empresa: str, cd_ged: str, cd_arquivo: str, 
         <wsu:Expires>{wsse['expires']}</wsu:Expires>
       </wsu:Timestamp>
       <wsse:UsernameToken wsu:Id="{wsse['token_id']}">
-        <wsse:Username>{SOC_WS_USUARIO}</wsse:Username>
+        <wsse:Username>{wsse['usuario']}</wsse:Username>
         <wsse:Password Type="{wsse['password_type']}">{wsse['password_value']}</wsse:Password>
         <wsse:Nonce EncodingType="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary">{wsse['nonce']}</wsse:Nonce>
         <wsu:Created>{wsse['created']}</wsu:Created>
@@ -95,6 +99,30 @@ def _extrair_codigo_mensagem(xml_text: str | None) -> tuple[str | None, str | No
     except Exception:
         return None, None
     return root.findtext(".//codigoMensagem"), root.findtext(".//mensagem")
+
+
+def _extrair_soap_fault(xml_text: str | None) -> tuple[str | None, str | None]:
+    if not xml_text:
+        return None, None
+    try:
+        root = ET.fromstring(xml_text)
+    except Exception:
+        return None, None
+    return root.findtext(".//faultcode"), root.findtext(".//faultstring")
+
+
+def _eh_fault_seguranca(faultcode: str | None, faultstring: str | None) -> bool:
+    texto = f"{faultcode or ''} {faultstring or ''}".lower()
+    return any(
+        trecho in texto
+        for trecho in (
+            "invalidsecurity",
+            "failedauthentication",
+            "username token",
+            "security token",
+            "replay attack",
+        )
+    )
 
 
 def _extrair_href_cid_do_xml(xml_resp: str | None) -> str | None:
@@ -165,12 +193,35 @@ def _interpretar_resposta(response) -> tuple:
     return response.text, None, None, []
 
 
-def _salvar_debug(cd_empresa: str, cd_ged: str, cd_arquivo: str, xml_resp, partes: list, payload):
+def _mascarar_xml_request(xml: str) -> str:
+    xml = re.sub(r"(<wsse:Username>).*?(</wsse:Username>)", r"\1***\2", xml, flags=re.S)
+    xml = re.sub(r"(<wsse:Password[^>]*>).*?(</wsse:Password>)", r"\1***\2", xml, flags=re.S)
+    xml = re.sub(r"(<wsse:Nonce[^>]*>).*?(</wsse:Nonce>)", r"\1***\2", xml, flags=re.S)
+    return xml
+
+
+def _salvar_debug(cd_empresa: str, cd_ged: str, cd_arquivo: str, xml_resp, partes: list, payload,
+                  response=None, xml_request: str | None = None):
     os.makedirs(PASTA_DEBUG, exist_ok=True)
     base = f"{cd_empresa}_{cd_ged}_{cd_arquivo}"
 
     with open(os.path.join(PASTA_DEBUG, f"{base}_xml.txt"), "w", encoding="utf-8") as f:
         f.write(xml_resp or "")
+
+    if xml_request:
+        with open(os.path.join(PASTA_DEBUG, f"{base}_request.xml"), "w", encoding="utf-8") as f:
+            f.write(_mascarar_xml_request(xml_request))
+
+    if response is not None:
+        http_meta = {
+            "status_code": response.status_code,
+            "reason":      response.reason,
+            "url":         response.url,
+            "headers":     dict(response.headers),
+            "text_preview": response.text[:4000],
+        }
+        with open(os.path.join(PASTA_DEBUG, f"{base}_http.json"), "w", encoding="utf-8") as f:
+            json.dump(http_meta, f, ensure_ascii=False, indent=2)
 
     meta = [
         {
@@ -198,31 +249,77 @@ def _salvar_debug(cd_empresa: str, cd_ged: str, cd_arquivo: str, xml_resp, parte
 
 def baixar_documento(cd_empresa: str, cd_ged: str, cd_arquivo: str) -> tuple[bytes, str, str | None]:
     """Faz o download do documento GED e retorna (payload, tipo, nome_retorno)."""
-    wsse = gerar_wsse_password_digest()
-    xml  = montar_xml_download_por_lote(cd_empresa, cd_ged, cd_arquivo, wsse)
+    ultimo_response = None
+    ultimo_erro     = None
+    ultimo_xml      = None
 
-    response = _requisicao_com_retry(
-        requests.post,
-        SOC_DOWNLOAD_URL,
-        data=xml.encode("utf-8"),
-        headers={"Content-Type": "text/xml; charset=UTF-8", "SOAPAction": "", "Accept": "*/*"},
-        timeout=120,
-    )
+    for tentativa in range(1, 4):
+        wsse = gerar_wsse_password_digest()
+        xml  = montar_xml_download_por_lote(cd_empresa, cd_ged, cd_arquivo, wsse)
+        ultimo_xml = xml
+
+        try:
+            response = requests.post(
+                SOC_DOWNLOAD_URL,
+                data=xml.encode("utf-8"),
+                headers={"Content-Type": "text/xml; charset=UTF-8", "SOAPAction": "", "Accept": "*/*"},
+                timeout=120,
+            )
+            ultimo_response = response
+            if response.status_code < 500:
+                break
+
+            xml_resp, _, payload_debug, partes_debug = _interpretar_resposta(response)
+            faultcode, faultstring = _extrair_soap_fault(xml_resp)
+            if _eh_fault_seguranca(faultcode, faultstring):
+                _salvar_debug(
+                    cd_empresa, cd_ged, cd_arquivo,
+                    xml_resp, partes_debug, payload_debug,
+                    response=response, xml_request=xml,
+                )
+                raise RuntimeError(
+                    f"Falha de segurança no SOAP SOC. faultcode={faultcode} "
+                    f"faultstring={faultstring}. Debug salvo em {PASTA_DEBUG}."
+                )
+
+            ultimo_erro = RuntimeError(f"Servidor retornou HTTP {response.status_code}")
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+            response = None
+            ultimo_erro = e
+
+        if tentativa < 3:
+            espera = 2.0 ** tentativa
+            print(f"[RETRY {tentativa}/3] Aguardando {espera:.0f}s: {ultimo_erro}")
+            time.sleep(espera)
+    else:
+        if ultimo_response is not None:
+            xml_resp, _, payload_debug, partes_debug = _interpretar_resposta(ultimo_response)
+            _salvar_debug(
+                cd_empresa, cd_ged, cd_arquivo,
+                xml_resp, partes_debug, payload_debug,
+                response=ultimo_response, xml_request=ultimo_xml,
+            )
+            preview = (ultimo_response.text or "")[:300].replace("\n", " ")
+            raise RuntimeError(
+                f"Servidor retornou HTTP {ultimo_response.status_code}. "
+                f"Debug salvo em {PASTA_DEBUG}. Resposta: {preview}"
+            )
+        raise ultimo_erro
 
     xml_resp, nome_retorno, payload, partes = _interpretar_resposta(response)
     codigo_msg, mensagem = _extrair_codigo_mensagem(xml_resp)
 
     if codigo_msg != "SOC-100":
-        _salvar_debug(cd_empresa, cd_ged, cd_arquivo, xml_resp, partes, payload)
+        _salvar_debug(cd_empresa, cd_ged, cd_arquivo, xml_resp, partes, payload, response=response, xml_request=xml)
         raise RuntimeError(f"Retorno não foi sucesso. codigoMensagem={codigo_msg} mensagem={mensagem}")
 
     if not payload:
-        _salvar_debug(cd_empresa, cd_ged, cd_arquivo, xml_resp, partes, payload)
+        _salvar_debug(cd_empresa, cd_ged, cd_arquivo, xml_resp, partes, payload, response=response, xml_request=xml)
         raise RuntimeError("Nenhum payload binário encontrado.")
 
     tipo = payload_tipo(payload)
     if tipo not in ("pdf", "zip"):
-        _salvar_debug(cd_empresa, cd_ged, cd_arquivo, xml_resp, partes, payload)
+        _salvar_debug(cd_empresa, cd_ged, cd_arquivo, xml_resp, partes, payload, response=response, xml_request=xml)
         raise RuntimeError(f"Payload em formato inesperado. Tipo={tipo}. Primeiros bytes: {repr(payload[:20])}")
 
     return payload, tipo, nome_retorno

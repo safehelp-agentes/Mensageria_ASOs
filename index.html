@@ -1,0 +1,1377 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SafeWork — CRM ASOs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<style>
+/* ─────────────────── DESIGN TOKENS ─────────────────── */
+:root{
+  --ink-900:#0B0F1A;
+  --ink-800:#11172A;
+  --ink-700:#1A2238;
+  --ink-600:#293048;
+  --ink-500:#3A425C;
+  --ink-400:#5A6485;
+  --ink-300:#8C95B2;
+  --ink-200:#C7CDDD;
+  --ink-100:#E8EBF3;
+  --ink-50:#F5F7FB;
+  --accent:#0F746C;
+  --accent-soft:#E1F0EE;
+  --accent-deep:#0A5751;
+  --brand:#044792;
+  --brand-soft:#E3EAF4;
+  --brand-deep:#02356F;
+  --amber-soft:#FFF4E0;
+  --amber-700:#92400E;
+  --rose-soft:#FCE9EC;
+  --rose-700:#9F1239;
+  --rose-200:#FECDD3;
+  --radius-card:8px;
+  --shadow-card:0 1px 2px rgba(11,15,26,.04), 0 4px 12px rgba(11,15,26,.04);
+  --sidebar-w:340px;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:'Inter',ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  font-feature-settings:"cv02","cv03","cv04","cv11";
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  color:var(--ink-800);
+  background:
+    radial-gradient(60% 40% at 80% 0%, rgba(15,116,108,.10) 0%, rgba(15,116,108,0) 60%),
+    radial-gradient(40% 40% at 0% 100%, rgba(4,71,146,.08) 0%, rgba(4,71,146,0) 60%),
+    linear-gradient(180deg,#F5F7FB 0%, #EEF1F8 100%);
+  overflow:hidden;
+}
+button{font-family:inherit;cursor:pointer}
+input,textarea{font-family:inherit}
+
+.scrollbar-soft::-webkit-scrollbar{width:6px;height:6px}
+.scrollbar-soft::-webkit-scrollbar-thumb{background:rgba(11,15,26,.18);border-radius:999px}
+.scrollbar-soft::-webkit-scrollbar-track{background:transparent}
+
+/* ─────────────────── LAYOUT SHELL ─────────────────── */
+.app{display:flex;flex-direction:column;height:100vh;padding:24px 32px 24px}
+
+/* ─────────────────── HEADER ─────────────────── */
+.dash-header{
+  display:flex;align-items:flex-end;justify-content:space-between;gap:16px;
+  margin-bottom:20px;flex-wrap:wrap;flex-shrink:0;
+}
+.brand-block{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.brand-logo{height:44px;width:44px;border-radius:10px;background:#fff;display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow-card);overflow:hidden}
+.brand-logo img{width:38px;height:38px;object-fit:contain}
+.brand-text{border-left:1px solid var(--ink-200);padding-left:16px}
+.brand-eyebrow{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-400);font-weight:500}
+.brand-title{font-size:20px;font-weight:600;color:var(--ink-900);line-height:1.2;margin-top:2px}
+
+.tab-strip{
+  display:flex;align-items:center;gap:4px;background:var(--ink-50);
+  padding:4px;border-radius:var(--radius-card);margin-left:8px;
+}
+.tab-btn{
+  display:inline-flex;align-items:center;gap:6px;
+  font-size:13px;font-weight:500;color:var(--ink-500);
+  padding:6px 12px;border-radius:var(--radius-card);
+  background:transparent;border:none;transition:all .15s;
+}
+.tab-btn:hover{color:var(--ink-900)}
+.tab-btn.active{background:#fff;color:var(--ink-900);box-shadow:0 1px 2px rgba(11,15,26,.06)}
+.tab-btn svg{width:14px;height:14px}
+
+.header-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.status-pill{
+  display:inline-flex;align-items:center;gap:8px;
+  border-radius:999px;border:1px solid rgba(15,116,108,.20);
+  background:var(--accent-soft);color:var(--accent-deep);
+  font-size:12px;font-weight:500;padding:6px 12px;
+}
+.status-pill svg{width:13px;height:13px}
+.header-meta{font-size:12px;color:var(--ink-400)}
+.header-btn{
+  display:inline-flex;align-items:center;gap:8px;
+  background:#fff;border:1px solid var(--ink-200);
+  border-radius:var(--radius-card);
+  font-size:13px;font-weight:500;color:var(--ink-700);
+  padding:8px 12px;transition:border-color .15s;
+}
+.header-btn:hover{border-color:var(--ink-300)}
+.header-btn:disabled{opacity:.6;cursor:not-allowed}
+.header-btn svg{width:14px;height:14px}
+.header-btn.icon-only{padding:8px}
+.spinner{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ─────────────────── MAIN CARD (Conversas) ─────────────────── */
+.main-card{
+  flex:1;min-height:0;background:#fff;
+  border-radius:var(--radius-card);box-shadow:var(--shadow-card);
+  overflow:hidden;display:grid;grid-template-columns:var(--sidebar-w) 1fr;
+}
+
+/* ─────────────────── SIDEBAR ─────────────────── */
+.sidebar{display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--ink-100);overflow:hidden}
+.sidebar-tabs{display:flex;gap:6px;padding:12px;border-bottom:1px solid var(--ink-100);background:#fff}
+.stab{
+  flex:1;font-size:12px;font-weight:500;padding:8px 10px;
+  border-radius:var(--radius-card);transition:all .15s;
+  background:#fff;color:var(--ink-500);border:1px solid var(--ink-200);
+}
+.stab:hover:not(.active){background:var(--ink-50)}
+.stab.active{background:var(--accent);color:#fff;border-color:var(--accent);box-shadow:0 1px 2px rgba(11,15,26,.06)}
+
+.search-wrap{padding:12px;border-bottom:1px solid var(--ink-100)}
+.search-inner{position:relative}
+.search-inner svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:14px;height:14px;color:var(--ink-400);pointer-events:none}
+.search-inner input{
+  width:100%;background:#fff;border:1px solid var(--ink-200);
+  border-radius:var(--radius-card);padding:8px 12px 8px 34px;
+  font-size:13px;color:var(--ink-900);outline:none;transition:border-color .15s;
+}
+.search-inner input:focus{border-color:var(--accent)}
+.search-inner input::placeholder{color:var(--ink-400)}
+
+.conv-list{flex:1;min-height:0;overflow-y:auto}
+.conv-list .divider{border-bottom:1px solid var(--ink-100)}
+.conv-item{
+  width:100%;text-align:left;background:transparent;border:none;
+  display:flex;gap:12px;align-items:flex-start;
+  padding:12px;border-left:4px solid transparent;transition:background .12s;
+}
+.conv-item:hover{background:var(--ink-50)}
+.conv-item.active{background:var(--accent-soft);border-left-color:var(--accent)}
+.avatar{
+  flex-shrink:0;width:40px;height:40px;border-radius:50%;
+  background:var(--accent-soft);color:var(--accent-deep);
+  display:flex;align-items:center;justify-content:center;
+  font-size:13px;font-weight:600;letter-spacing:.02em;
+}
+.conv-info{flex:1;min-width:0}
+.conv-row1{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.conv-name{font-size:14px;font-weight:500;color:var(--ink-900);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+.conv-time{font-size:10px;color:var(--ink-400);flex-shrink:0;font-variant-numeric:tabular-nums}
+.conv-num{font-size:12px;color:var(--ink-400);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.conv-preview{font-size:12px;color:var(--ink-500);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px}
+.conv-preview .you{color:var(--ink-400)}
+.conv-badge{
+  flex-shrink:0;background:var(--accent);color:#fff;
+  font-size:10px;font-weight:600;border-radius:999px;
+  min-width:18px;height:18px;padding:0 6px;
+  display:inline-flex;align-items:center;justify-content:center;
+}
+.list-empty,.list-loading{padding:32px 16px;text-align:center;color:var(--ink-400);font-size:13px}
+.list-error{padding:12px 16px;background:var(--rose-soft);color:var(--rose-700);font-size:13px;border-bottom:1px solid var(--rose-200)}
+
+/* ─────────────────── CHAT PANE ─────────────────── */
+.chat{display:flex;flex-direction:column;min-height:0;background:var(--ink-50)}
+.chat-empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--ink-400);font-size:13px;padding:32px;text-align:center}
+.chat-empty .icon{width:44px;height:44px;color:var(--ink-300);margin-bottom:10px}
+.chat-empty-stack{display:flex;flex-direction:column;align-items:center}
+.chat-header-bar{flex-shrink:0;display:flex;align-items:center;gap:12px;padding:12px 16px;background:#fff;border-bottom:1px solid var(--ink-100)}
+.chat-header-bar .avatar{width:36px;height:36px;font-size:12px}
+.chat-header-info{min-width:0;flex:1}
+.chat-header-name{font-size:14px;font-weight:600;color:var(--ink-900);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat-header-meta{font-size:12px;color:var(--ink-400);display:flex;align-items:center;gap:12px;margin-top:2px;flex-wrap:wrap}
+.chat-header-meta .chip{display:inline-flex;align-items:center;gap:4px}
+.chat-header-meta svg{width:12px;height:12px}
+.chat-header-meta strong{color:var(--ink-700);font-weight:600}
+.messages{flex:1;min-height:0;overflow-y:auto;padding:16px 24px;display:flex;flex-direction:column;gap:2px}
+.msg-loading,.msg-empty{text-align:center;color:var(--ink-400);font-size:13px;padding:32px 16px;display:flex;align-items:center;justify-content:center;gap:8px}
+.msg-loading svg{width:16px;height:16px}
+.msg-error{background:var(--rose-soft);color:var(--rose-700);border:1px solid var(--rose-200);border-radius:var(--radius-card);padding:10px 14px;font-size:13px}
+.date-separator{display:flex;justify-content:center;margin:12px 0 8px}
+.date-separator span{background:var(--ink-100);color:var(--ink-500);font-size:11px;padding:4px 12px;border-radius:999px;font-weight:500}
+.msg-row{display:flex;margin:2px 0}
+.msg-row.out{justify-content:flex-end}
+.msg-row.in{justify-content:flex-start}
+.msg-stack{max-width:70%;display:flex;flex-direction:column}
+.msg-row.out .msg-stack{align-items:flex-end}
+.msg-row.in .msg-stack{align-items:flex-start}
+.bubble{padding:8px 12px;border-radius:16px;box-shadow:0 1px 2px rgba(11,15,26,.05);word-break:break-word}
+.msg-row.out .bubble{background:var(--accent);color:#fff;border-bottom-right-radius:4px}
+.msg-row.in .bubble{background:#fff;color:var(--ink-900);border:1px solid var(--ink-100);border-bottom-left-radius:4px}
+.bubble-text{font-size:14px;line-height:1.5;white-space:pre-wrap}
+.bubble-meta{font-size:10px;margin-top:4px;text-align:right;display:flex;align-items:center;justify-content:flex-end;gap:4px}
+.msg-row.out .bubble-meta{color:rgba(225,240,238,.90)}
+.msg-row.in .bubble-meta{color:var(--ink-400)}
+.bubble-check svg{width:12px;height:12px}
+.doc-bubble{display:flex;align-items:center;gap:10px;min-width:220px}
+.doc-icon{width:36px;height:36px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.msg-row.out .doc-icon{background:rgba(255,255,255,.18);color:#fff}
+.msg-row.in .doc-icon{background:var(--accent-soft);color:var(--accent-deep)}
+.doc-icon svg{width:18px;height:18px}
+.doc-info{min-width:0;flex:1}
+.doc-name{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.doc-meta{font-size:11px;opacity:.75;margin-top:2px;letter-spacing:.02em}
+
+/* ─────────────────── INPUT ─────────────────── */
+.chat-input-area{flex-shrink:0;padding:12px 16px;background:#fff;border-top:1px solid var(--ink-100);display:flex;align-items:flex-end;gap:10px}
+.chat-input-area textarea{flex:1;background:var(--ink-50);border:1px solid var(--ink-200);border-radius:12px;padding:10px 14px;font-size:14px;color:var(--ink-900);outline:none;resize:none;min-height:42px;max-height:140px;line-height:1.5;transition:border-color .15s}
+.chat-input-area textarea:focus{border-color:var(--accent);background:#fff}
+.chat-input-area textarea::placeholder{color:var(--ink-400)}
+.send-btn{flex-shrink:0;width:42px;height:42px;border-radius:50%;background:var(--accent);color:#fff;border:none;display:flex;align-items:center;justify-content:center;transition:background .15s,opacity .15s}
+.send-btn:hover{background:var(--accent-deep)}
+.send-btn:disabled{background:var(--ink-200);color:#fff;cursor:not-allowed}
+.send-btn svg{width:18px;height:18px}
+
+/* ─────────────────── VIEW PANELS ─────────────────── */
+.view-panel{
+  flex:1;min-height:0;overflow-y:auto;
+  padding-bottom:8px;display:none;flex-direction:column;gap:16px;
+}
+.view-panel.active{display:flex}
+
+/* ─────────────────── DASHBOARD ─────────────────── */
+.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;flex-shrink:0}
+.kpi-card{
+  background:#fff;border-radius:var(--radius-card);
+  box-shadow:var(--shadow-card);padding:18px 20px;
+  display:flex;flex-direction:column;gap:2px;
+}
+.kpi-icon-wrap{
+  width:32px;height:32px;border-radius:8px;
+  display:flex;align-items:center;justify-content:center;margin-bottom:10px;
+}
+.kpi-icon-wrap svg{width:16px;height:16px}
+.kpi-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-400)}
+.kpi-value{font-size:32px;font-weight:700;color:var(--ink-900);line-height:1.1;font-variant-numeric:tabular-nums}
+.kpi-sub{font-size:11px;color:var(--ink-400);margin-top:2px}
+
+.dash-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;flex-shrink:0}
+.panel-card{
+  background:#fff;border-radius:var(--radius-card);
+  box-shadow:var(--shadow-card);padding:18px 20px;
+  display:flex;flex-direction:column;
+}
+.panel-card.full{grid-column:1/-1}
+.card-title{
+  font-size:13px;font-weight:600;color:var(--ink-900);
+  margin-bottom:14px;display:flex;align-items:center;gap:8px;flex-shrink:0;
+}
+.card-title svg{width:14px;height:14px;color:var(--ink-400)}
+.chart-wrap{height:180px;position:relative}
+
+/* ─────────────────── DATA TABLE (shared) ─────────────────── */
+.data-table{width:100%;border-collapse:collapse}
+.data-table th{
+  font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;
+  color:var(--ink-400);padding:10px 14px;text-align:left;
+  border-bottom:1px solid var(--ink-100);background:var(--ink-50);
+  position:sticky;top:0;z-index:1;white-space:nowrap;
+}
+.data-table td{
+  padding:10px 14px;font-size:13px;color:var(--ink-800);
+  border-bottom:1px solid var(--ink-100);
+}
+.data-table tbody tr:last-child td{border-bottom:none}
+.data-table tbody tr:hover td{background:var(--ink-50)}
+.td-mono{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:11px;color:var(--ink-400)}
+.td-trunc{max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ─────────────────── BADGES ─────────────────── */
+.badge{
+  display:inline-flex;align-items:center;gap:5px;
+  padding:3px 9px;border-radius:999px;
+  font-size:11px;font-weight:600;white-space:nowrap;
+}
+.badge-green{background:var(--accent-soft);color:var(--accent-deep)}
+.badge-amber{background:var(--amber-soft);color:var(--amber-700)}
+.badge::before{content:'';width:5px;height:5px;border-radius:50%;background:currentColor;display:inline-block}
+
+/* ─────────────────── ASOs PANEL ─────────────────── */
+.panel-toolbar{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex-shrink:0;
+  background:#fff;border-radius:var(--radius-card);
+  box-shadow:var(--shadow-card);padding:12px 16px;
+}
+.filter-tabs{display:flex;gap:3px;background:var(--ink-100);padding:3px;border-radius:6px}
+.filter-tab{
+  padding:5px 12px;font-size:12px;font-weight:500;
+  border:none;background:transparent;color:var(--ink-500);
+  border-radius:5px;transition:all .15s;
+}
+.filter-tab.active{background:#fff;color:var(--ink-900);box-shadow:0 1px 2px rgba(11,15,26,.06)}
+.panel-search-wrap{position:relative;flex:1;max-width:280px}
+.panel-search-wrap svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);width:14px;height:14px;color:var(--ink-400);pointer-events:none}
+.panel-search{
+  width:100%;background:var(--ink-50);border:1px solid var(--ink-200);
+  border-radius:var(--radius-card);padding:7px 12px 7px 32px;
+  font-size:13px;color:var(--ink-900);outline:none;transition:border-color .15s;
+}
+.panel-search:focus{border-color:var(--accent);background:#fff}
+.panel-count{font-size:12px;color:var(--ink-400);margin-left:auto}
+
+.table-card{
+  background:#fff;border-radius:var(--radius-card);
+  box-shadow:var(--shadow-card);overflow:auto;flex:1;min-height:200px;
+}
+.empty-state{
+  padding:48px 24px;text-align:center;color:var(--ink-400);font-size:13px;
+}
+.empty-state svg{width:40px;height:40px;color:var(--ink-200);margin:0 auto 12px;display:block}
+
+/* ─────────────────── MODAL ─────────────────── */
+.modal-overlay{position:fixed;inset:0;background:rgba(11,15,26,.45);z-index:100;display:none;align-items:center;justify-content:center;padding:20px}
+.modal-overlay.open{display:flex}
+.modal{background:#fff;border-radius:12px;box-shadow:0 20px 60px rgba(11,15,26,.18);padding:24px;width:460px;max-width:100%}
+.modal h3{font-size:15px;font-weight:600;color:var(--ink-900);margin-bottom:20px;display:flex;align-items:center;gap:8px}
+.modal h3 svg{width:16px;height:16px;color:var(--ink-500)}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:11px;font-weight:600;color:var(--ink-500);letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px}
+.field input{width:100%;background:var(--ink-50);border:1px solid var(--ink-200);border-radius:var(--radius-card);padding:9px 12px;font-size:13px;font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;color:var(--ink-900);outline:none;transition:border-color .15s}
+.field input:focus{border-color:var(--accent);background:#fff}
+.modal-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}
+.btn{padding:8px 18px;border-radius:var(--radius-card);border:none;font-size:13px;font-weight:500;transition:all .15s}
+.btn-ghost{background:#fff;color:var(--ink-500);border:1px solid var(--ink-200)}
+.btn-ghost:hover{border-color:var(--ink-300);color:var(--ink-900)}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{background:var(--accent-deep)}
+
+/* ─────────────────── TOAST ─────────────────── */
+#toast{
+  position:fixed;bottom:24px;right:24px;
+  background:#fff;border:1px solid var(--ink-200);border-left-width:3px;
+  border-radius:var(--radius-card);padding:12px 16px;
+  font-size:13px;color:var(--ink-800);z-index:200;
+  opacity:0;transform:translateY(8px);transition:all .2s;pointer-events:none;
+  box-shadow:0 4px 16px rgba(11,15,26,.12);max-width:360px;
+}
+#toast.show{opacity:1;transform:translateY(0)}
+#toast.ok{border-left-color:var(--accent)}
+#toast.err{border-left-color:#EF4444}
+
+/* ─────────────────── RESPONSIVE ─────────────────── */
+@media (max-width:1100px){.kpi-grid{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:900px){
+  .app{padding:14px}
+  .main-card{grid-template-columns:1fr}
+  .sidebar{border-right:none;border-bottom:1px solid var(--ink-100)}
+  .chat.hidden-mobile{display:none}
+  .sidebar.hidden-mobile{display:none}
+  .dash-row{grid-template-columns:1fr}
+}
+@media (max-width:600px){.kpi-grid{grid-template-columns:1fr}}
+
+/* ─────────────────── TELA DE LOGIN ─────────────────── */
+#tela-login{
+  position:fixed;inset:0;z-index:300;
+  display:flex;align-items:center;justify-content:center;
+  background:
+    radial-gradient(60% 40% at 80% 0%, rgba(15,116,108,.12) 0%, transparent 60%),
+    radial-gradient(40% 40% at 0% 100%, rgba(4,71,146,.10) 0%, transparent 60%),
+    linear-gradient(180deg,#F5F7FB 0%, #EEF1F8 100%);
+  padding:20px;
+}
+.login-card{
+  background:#fff;border-radius:14px;
+  box-shadow:0 4px 6px rgba(11,15,26,.04),0 16px 48px rgba(11,15,26,.12);
+  padding:40px;width:100%;max-width:400px;
+}
+.login-brand{display:flex;align-items:center;gap:14px;margin-bottom:32px;padding-bottom:24px;border-bottom:1px solid var(--ink-100)}
+.login-brand .lbrand-logo{height:44px;width:44px;border-radius:10px;background:var(--ink-50);display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow-card);overflow:hidden;flex-shrink:0}
+.login-brand .lbrand-logo img{width:38px;height:38px;object-fit:contain}
+.lbrand-eyebrow{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-400);font-weight:500}
+.lbrand-title{font-size:18px;font-weight:600;color:var(--ink-900);margin-top:2px}
+.login-heading{font-size:15px;font-weight:600;color:var(--ink-900);margin-bottom:4px}
+.login-sub{font-size:13px;color:var(--ink-400);margin-bottom:24px}
+.login-field{margin-bottom:16px}
+.login-field label{display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-500);margin-bottom:6px}
+.login-field input{
+  width:100%;background:var(--ink-50);border:1px solid var(--ink-200);
+  border-radius:var(--radius-card);padding:10px 14px;
+  font-size:14px;color:var(--ink-900);outline:none;transition:border-color .15s;font-family:inherit;
+}
+.login-field input:focus{border-color:var(--accent);background:#fff}
+.login-field input::placeholder{color:var(--ink-400)}
+.login-btn{
+  width:100%;padding:11px;border-radius:var(--radius-card);border:none;
+  background:var(--accent);color:#fff;font-size:14px;font-weight:600;
+  cursor:pointer;transition:background .15s;margin-top:8px;font-family:inherit;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+}
+.login-btn:hover:not(:disabled){background:var(--accent-deep)}
+.login-btn:disabled{background:var(--ink-300);cursor:not-allowed}
+.login-btn svg{width:16px;height:16px}
+.login-error{
+  background:var(--rose-soft);color:var(--rose-700);
+  border:1px solid var(--rose-200);border-radius:var(--radius-card);
+  padding:10px 14px;font-size:13px;margin-bottom:16px;display:none;
+}
+.login-error.show{display:block}
+.user-chip{
+  display:inline-flex;align-items:center;gap:6px;
+  font-size:12px;color:var(--ink-500);
+  background:var(--ink-50);border:1px solid var(--ink-200);
+  border-radius:999px;padding:5px 10px;
+}
+.user-chip svg{width:12px;height:12px}
+</style>
+</head>
+<body>
+
+<!-- ─── TELA DE LOGIN ─── -->
+<div id="tela-login">
+  <div class="login-card">
+    <div class="login-brand">
+      <div class="lbrand-logo"><img id="login-logo-img" src="" alt="SafeWork"></div>
+      <div>
+        <div class="lbrand-eyebrow">ASOs</div>
+        <div class="lbrand-title">CRM SafeWork</div>
+      </div>
+    </div>
+    <div class="login-heading">Entrar na conta</div>
+    <div class="login-sub">Use o e-mail e senha cadastrados no sistema.</div>
+    <div class="login-error" id="login-error"></div>
+    <form id="login-form" onsubmit="fazerLogin(event)">
+      <div class="login-field">
+        <label for="login-email">E-mail</label>
+        <input type="email" id="login-email" placeholder="seu@email.com" required autocomplete="email">
+      </div>
+      <div class="login-field">
+        <label for="login-senha">Senha</label>
+        <input type="password" id="login-senha" placeholder="••••••••" required autocomplete="current-password">
+      </div>
+      <button type="submit" class="login-btn" id="login-btn">
+        <span id="login-btn-text">Entrar</span>
+      </button>
+    </form>
+  </div>
+</div>
+
+<div class="app" id="app-root" style="display:none">
+
+  <!-- ─── HEADER ─── -->
+  <header class="dash-header">
+    <div class="brand-block">
+      <div class="brand-logo"><img src="data:image/png;base64,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" alt="Grupo Safework"></div>
+      <div class="brand-text">
+        <div class="brand-eyebrow">ASOs</div>
+        <h1 class="brand-title">CRM SafeWork</h1>
+      </div>
+      <nav class="tab-strip" aria-label="Seções">
+        <button id="tab-conversas" class="tab-btn active" type="button" onclick="trocarView('conversas')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          Conversas
+        </button>
+        <button id="tab-dashboard" class="tab-btn" type="button" onclick="trocarView('dashboard')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          Dashboard
+        </button>
+        <button id="tab-asos" class="tab-btn" type="button" onclick="trocarView('asos')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+          ASOs
+        </button>
+      </nav>
+    </div>
+
+    <div class="header-actions">
+      <span class="status-pill" id="status-pill">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg>
+        <span id="status-pill-text">Dados reais</span>
+      </span>
+      <span class="header-meta" id="header-meta">Carregando…</span>
+      <button class="header-btn" id="refresh-btn" onclick="refreshAtual()" title="Atualizar">
+        <svg id="refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        Atualizar
+      </button>
+      <span class="user-chip" id="user-chip" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <span id="user-email-label"></span>
+      </span>
+      <button class="header-btn" id="logout-btn" style="display:none" onclick="fazerLogout()" title="Sair">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        Sair
+      </button>
+      <button class="header-btn icon-only" onclick="abrirConfig()" title="Configurações" aria-label="Configurações">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ─── VIEW: CONVERSAS ─── -->
+  <div class="main-card" id="main-card">
+    <aside class="sidebar">
+      <div class="sidebar-tabs" role="tablist">
+        <button class="stab active" id="stab-todos"    role="tab" onclick="filtrarAba('todos')">Todos</button>
+        <button class="stab"        id="stab-inbound"  role="tab" onclick="filtrarAba('inbound')">Recebidas</button>
+        <button class="stab"        id="stab-empresas" role="tab" onclick="filtrarAba('empresas')">Empresas</button>
+      </div>
+      <div class="search-wrap">
+        <div class="search-inner">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" id="search" placeholder="Buscar empresa ou número..." oninput="filtrarConversas()">
+        </div>
+      </div>
+      <div class="conv-list scrollbar-soft" id="conv-list">
+        <div class="list-loading">Carregando conversas&hellip;</div>
+      </div>
+    </aside>
+    <section class="chat" id="chat">
+      <div class="chat-empty">
+        <div class="chat-empty-stack">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <div>Selecione uma conversa à esquerda<br>para visualizar o histórico.</div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ─── VIEW: DASHBOARD ─── -->
+  <div class="view-panel scrollbar-soft" id="panel-dashboard">
+
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-icon-wrap" style="background:var(--accent-soft);color:var(--accent-deep)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+        <div class="kpi-label">Total Enviados</div>
+        <div class="kpi-value" id="kpi-total">—</div>
+        <div class="kpi-sub" id="kpi-total-sub">carregando…</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon-wrap" style="background:var(--amber-soft);color:var(--amber-700)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        </div>
+        <div class="kpi-label">Pendentes</div>
+        <div class="kpi-value" id="kpi-pendentes">—</div>
+        <div class="kpi-sub">aguardando assinatura digital</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon-wrap" style="background:var(--brand-soft);color:var(--brand-deep)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        </div>
+        <div class="kpi-label">Enviados Hoje</div>
+        <div class="kpi-value" id="kpi-hoje">—</div>
+        <div class="kpi-sub" id="kpi-hoje-sub">—</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon-wrap" style="background:#F0F0FF;color:#4338CA">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        </div>
+        <div class="kpi-label">Empresas Atendidas</div>
+        <div class="kpi-value" id="kpi-empresas">—</div>
+        <div class="kpi-sub">com pelo menos 1 ASO enviado</div>
+      </div>
+    </div>
+
+    <div class="panel-card full">
+      <div class="card-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        Envios por dia — últimos 30 dias
+      </div>
+      <div class="chart-wrap">
+        <canvas id="dash-chart"></canvas>
+      </div>
+    </div>
+
+    <div class="dash-row">
+      <div class="panel-card full">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          Últimos envios
+        </div>
+        <div style="overflow-x:auto">
+          <table class="data-table" id="dash-recentes">
+            <thead>
+              <tr>
+                <th>Empresa</th>
+                <th>Emissão</th>
+                <th>Enviado em</th>
+                <th>Status</th>
+                <th>Número</th>
+              </tr>
+            </thead>
+            <tbody id="dash-recentes-body">
+              <tr><td colspan="5" style="text-align:center;color:var(--ink-400);padding:24px">Carregando…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /panel-dashboard -->
+
+  <!-- ─── VIEW: ASOs ─── -->
+  <div class="view-panel" id="panel-asos" style="gap:12px">
+
+    <div class="panel-toolbar">
+      <div class="filter-tabs">
+        <button class="filter-tab active" id="ftab-todos"    onclick="filtrarTabASO('todos')">Todos</button>
+        <button class="filter-tab"        id="ftab-enviados" onclick="filtrarTabASO('enviados')">Enviados</button>
+        <button class="filter-tab"        id="ftab-pend"     onclick="filtrarTabASO('pendentes')">Pendentes</button>
+      </div>
+      <div class="panel-search-wrap">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input class="panel-search" id="asos-search" type="text" placeholder="Buscar empresa ou código..." oninput="aplicarFiltrosASO()">
+      </div>
+      <span class="panel-count" id="asos-count"></span>
+    </div>
+
+    <div class="table-card scrollbar-soft">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Empresa</th>
+            <th>Cód.</th>
+            <th>Emissão</th>
+            <th>Enviado em</th>
+            <th>Status</th>
+            <th>Número destino</th>
+          </tr>
+        </thead>
+        <tbody id="asos-tbody">
+          <tr><td colspan="7" style="text-align:center;color:var(--ink-400);padding:32px">Carregando…</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div><!-- /panel-asos -->
+
+</div><!-- /app -->
+
+<!-- MODAL CONFIG -->
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <h3>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      Configurações
+    </h3>
+    <div class="field"><label>Supabase URL</label><input type="text" id="cfg-url" placeholder="https://xxx.supabase.co"></div>
+    <div class="field"><label>Supabase Publishable Key</label><input type="text" id="cfg-key" placeholder="sb_publishable_..."></div>
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="fecharConfig()">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarConfig()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ─────────────────── CONFIG ───────────────────
+const DEFAULTS = {
+  url: 'https://sjtjldxvjjjadtckhfkp.supabase.co',
+  key: 'sb_publishable_-vaRWsiPcyfxv1ap0ZuFZw_77votd9W',
+};
+const TZ = 'America/Sao_Paulo';
+
+let cfg            = {};
+let sb             = null;
+let convAtiva      = null;
+let pollInterval   = null;
+let abaFiltro      = 'todos';
+let todasConversas = [];
+let empresasMap    = new Map();
+let viewAtual      = 'conversas';
+let todosASOs      = [];
+let asoFiltroTab   = 'todos';
+let dashChart      = null;
+
+// ─────────────────── CONFIG STORAGE ───────────────────
+function carregarCfg() {
+  cfg = {
+    url: localStorage.getItem('sw_url') || DEFAULTS.url,
+    key: localStorage.getItem('sw_key') || DEFAULTS.key,
+  };
+}
+
+function salvarConfig() {
+  cfg.url = document.getElementById('cfg-url').value.trim();
+  cfg.key = document.getElementById('cfg-key').value.trim();
+  localStorage.setItem('sw_url', cfg.url);
+  localStorage.setItem('sw_key', cfg.key);
+  fecharConfig();
+  try { sb = supabase.createClient(cfg.url, cfg.key); } catch(e) {}
+  inicializar();
+  toast('Configurações salvas', 'ok');
+}
+
+function abrirConfig() {
+  document.getElementById('cfg-url').value = cfg.url;
+  document.getElementById('cfg-key').value = cfg.key;
+  document.getElementById('modal').classList.add('open');
+}
+
+function fecharConfig() { document.getElementById('modal').classList.remove('open'); }
+
+document.getElementById('modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal')) fecharConfig();
+});
+
+// ─────────────────── INIT ───────────────────
+window.onload = async () => {
+  carregarCfg();
+
+  // Copia logo do header para a tela de login
+  const headerImg = document.querySelector('.dash-header .brand-logo img');
+  const loginImg  = document.getElementById('login-logo-img');
+  if (headerImg && loginImg) loginImg.src = headerImg.src;
+
+  // Event delegation: lista de conversas
+  const listEl = document.getElementById('conv-list');
+  if (listEl) {
+    listEl.addEventListener('click', e => {
+      const btn = e.target.closest('.conv-item');
+      if (btn && btn.dataset.chave) abrirConversa(btn.dataset.chave);
+    });
+  }
+
+  atualizarHoraHeader();
+
+  // Cria o cliente Supabase e verifica se já há sessão ativa
+  try {
+    sb = supabase.createClient(cfg.url, cfg.key);
+  } catch(e) {
+    mostrarLogin();
+    return;
+  }
+
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) {
+    mostrarApp(session.user);
+  } else {
+    mostrarLogin();
+  }
+
+  // Escuta mudanças de sessão (ex: expiração)
+  sb.auth.onAuthStateChange((_event, session) => {
+    if (!session) mostrarLogin();
+  });
+};
+
+function inicializar() {
+  carregarEmpresas();
+  carregarConversas();
+  if (pollInterval) clearInterval(pollInterval);
+  pollInterval = setInterval(() => {
+    if (viewAtual === 'conversas') {
+      carregarConversas(true);
+      if (convAtiva) carregarMensagens(convAtiva, true);
+    }
+  }, 8000);
+}
+
+// ─────────────────── AUTH ───────────────────
+function mostrarLogin() {
+  document.getElementById('tela-login').style.display = 'flex';
+  document.getElementById('app-root').style.display   = 'none';
+  document.getElementById('user-chip').style.display  = 'none';
+  document.getElementById('logout-btn').style.display = 'none';
+  setTimeout(() => {
+    const el = document.getElementById('login-email');
+    if (el) el.focus();
+  }, 80);
+}
+
+function mostrarApp(user) {
+  document.getElementById('tela-login').style.display = 'none';
+  document.getElementById('app-root').style.display   = '';
+
+  const chip = document.getElementById('user-chip');
+  const label = document.getElementById('user-email-label');
+  if (chip)  chip.style.display  = '';
+  if (label) label.textContent   = user.email;
+  document.getElementById('logout-btn').style.display = '';
+
+  inicializar();
+}
+
+async function fazerLogin(event) {
+  event.preventDefault();
+  const email   = document.getElementById('login-email').value.trim();
+  const senha   = document.getElementById('login-senha').value;
+  const btn     = document.getElementById('login-btn');
+  const btnText = document.getElementById('login-btn-text');
+  const errEl   = document.getElementById('login-error');
+
+  btn.disabled     = true;
+  btnText.textContent = 'Entrando…';
+  errEl.classList.remove('show');
+
+  try {
+    const { data, error } = await sb.auth.signInWithPassword({ email, password: senha });
+    if (error) throw error;
+    mostrarApp(data.user);
+  } catch(e) {
+    errEl.textContent = traduzirErroAuth(e.message);
+    errEl.classList.add('show');
+    btn.disabled     = false;
+    btnText.textContent = 'Entrar';
+  }
+}
+
+async function fazerLogout() {
+  if (!sb) return;
+  await sb.auth.signOut();
+  if (pollInterval) clearInterval(pollInterval);
+  convAtiva      = null;
+  todasConversas = [];
+  todosASOs      = [];
+  mostrarLogin();
+  toast('Sessão encerrada', 'ok');
+}
+
+function traduzirErroAuth(msg) {
+  if (!msg) return 'Erro ao fazer login.';
+  const m = msg.toLowerCase();
+  if (m.includes('invalid login') || m.includes('invalid email') || m.includes('wrong password'))
+    return 'E-mail ou senha incorretos.';
+  if (m.includes('email not confirmed'))
+    return 'Confirme seu e-mail antes de entrar.';
+  if (m.includes('too many requests'))
+    return 'Muitas tentativas. Aguarde alguns minutos.';
+  if (m.includes('user not found'))
+    return 'Usuário não encontrado.';
+  return 'Erro: ' + msg;
+}
+
+function atualizarHoraHeader() {
+  const el = document.getElementById('header-meta');
+  if (el) el.textContent = 'Atualizado em ' +
+    new Date().toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit', timeZone: TZ });
+}
+setInterval(atualizarHoraHeader, 30000);
+
+// ─────────────────── VIEW SWITCHING ───────────────────
+function trocarView(view) {
+  viewAtual = view;
+  ['conversas','dashboard','asos'].forEach(v => {
+    document.getElementById('tab-' + v).classList.toggle('active', v === view);
+  });
+  document.getElementById('main-card').style.display    = view === 'conversas' ? '' : 'none';
+  document.getElementById('panel-dashboard').classList.toggle('active', view === 'dashboard');
+  document.getElementById('panel-asos').classList.toggle('active', view === 'asos');
+
+  if (view === 'dashboard') carregarDashboard();
+  if (view === 'asos')      carregarASOs();
+}
+
+function refreshAtual() {
+  const icon = document.getElementById('refresh-icon');
+  if (icon) icon.classList.add('spinner');
+  setTimeout(() => { if (icon) icon.classList.remove('spinner'); }, 600);
+
+  if (viewAtual === 'conversas') carregarConversas();
+  else if (viewAtual === 'dashboard') carregarDashboard();
+  else if (viewAtual === 'asos')      carregarASOs();
+  atualizarHoraHeader();
+}
+
+// ─────────────────── EMPRESAS ───────────────────
+async function carregarEmpresas() {
+  if (!sb) return;
+  try {
+    const { data, error } = await sb.from('empresas').select('codigo,nome,cnpj,telefone');
+    if (error) throw error;
+    empresasMap = new Map();
+    for (const e of (data || [])) {
+      if (e.codigo) empresasMap.set(String(e.codigo), e);
+    }
+  } catch(e) { console.warn('Falha ao carregar empresas:', e); }
+}
+
+// ─────────────────── CONVERSAS ───────────────────
+async function carregarConversas(silencioso = false) {
+  if (!sb) return;
+  const list = document.getElementById('conv-list');
+  if (!silencioso) list.innerHTML = '<div class="list-loading">Carregando conversas&hellip;</div>';
+
+  try {
+    const { data, error } = await sb.from('mensagens')
+      .select('*').order('created_at', { ascending: false }).limit(500);
+    if (error) throw error;
+
+    const mapa = new Map();
+    for (const m of (data || [])) {
+      const numero = m.numero_whatsapp;
+      if (!numero) continue;
+      if (!mapa.has(numero)) {
+        mapa.set(numero, { chave: numero, numero, codigo: '', nome: m.nome_empresa || numero, ultima_msg: m, nao_lidas: 0, temEmpresa: false });
+      }
+      const conv = mapa.get(numero);
+      if (m.nome_empresa && m.nome_empresa.trim()) conv.nome = m.nome_empresa;
+      if (m.codigo_empresa && !m.codigo_empresa.includes('_')) { conv.codigo = m.codigo_empresa; conv.temEmpresa = true; }
+      if (m.direcao === 'inbound') conv.nao_lidas++;
+    }
+    todasConversas = [...mapa.values()].sort((a,b) =>
+      new Date(b.ultima_msg.created_at) - new Date(a.ultima_msg.created_at));
+    atualizarHoraHeader();
+    aplicarFiltros();
+  } catch(e) {
+    console.error(e);
+    if (!silencioso) list.innerHTML = `<div class="list-error">Erro ao carregar: ${esc(e.message || e)}</div>`;
+  }
+}
+
+function filtrarAba(aba) {
+  abaFiltro = aba;
+  ['todos','inbound','empresas'].forEach(a =>
+    document.getElementById('stab-'+a).classList.toggle('active', a === aba));
+  aplicarFiltros();
+}
+
+function filtrarConversas() { aplicarFiltros(); }
+
+function aplicarFiltros() {
+  const q = (document.getElementById('search').value || '').toLowerCase();
+  let lista = todasConversas;
+  if (abaFiltro === 'inbound')  lista = lista.filter(c => c.ultima_msg.direcao === 'inbound');
+  if (abaFiltro === 'empresas') lista = lista.filter(c => c.temEmpresa);
+  if (q) lista = lista.filter(c =>
+    (c.nome||'').toLowerCase().includes(q) ||
+    (c.numero||'').includes(q) ||
+    previewMsg(c.ultima_msg).toLowerCase().includes(q));
+  renderConversas(lista);
+}
+
+function renderConversas(lista) {
+  const el = document.getElementById('conv-list');
+  if (!lista.length) {
+    let msg = 'Nenhuma conversa encontrada';
+    if (abaFiltro === 'inbound')  msg = 'Nenhuma mensagem recebida ainda.';
+    if (abaFiltro === 'empresas') msg = 'Nenhuma conversa vinculada a empresa.';
+    el.innerHTML = `<div class="list-empty">${msg}</div>`;
+    return;
+  }
+  el.innerHTML = lista.map(c => {
+    const ativa    = convAtiva && convAtiva.chave === c.chave ? 'active' : '';
+    const preview  = previewMsg(c.ultima_msg);
+    const tempo    = fmtTempo(c.ultima_msg.created_at);
+    const badge    = c.nao_lidas > 0 ? `<div class="conv-badge">${c.nao_lidas > 99 ? '99+' : c.nao_lidas}</div>` : '';
+    const youPfx   = c.ultima_msg.direcao === 'outbound' ? '<span class="you">Você: </span>' : '';
+    return `
+      <button class="conv-item ${ativa}" data-chave="${esc(c.chave)}">
+        <div class="avatar">${esc(initials(c.nome))}</div>
+        <div class="conv-info">
+          <div class="conv-row1">
+            <div class="conv-name">${esc(c.nome)}</div>
+            <div class="conv-time">${tempo}</div>
+          </div>
+          <div class="conv-num">${esc(c.numero)}</div>
+          <div class="conv-preview">${youPfx}${esc(preview)}${badge}</div>
+        </div>
+      </button>
+      <div class="divider"></div>`;
+  }).join('');
+}
+
+function abrirConversa(chave) {
+  convAtiva = todasConversas.find(c => c.chave === chave);
+  if (!convAtiva) return;
+  convAtiva.nao_lidas = 0;
+  aplicarFiltros();
+  renderChat(convAtiva);
+  carregarMensagens(convAtiva);
+}
+
+// ─────────────────── CHAT PANE ───────────────────
+function renderChat(conv) {
+  const empresa = conv.codigo && empresasMap.get(String(conv.codigo));
+  const cnpj    = empresa && empresa.cnpj ? esc(empresa.cnpj) : '';
+  document.getElementById('chat').innerHTML = `
+    <div class="chat-header-bar">
+      <div class="avatar">${esc(initials(conv.nome))}</div>
+      <div class="chat-header-info">
+        <div class="chat-header-name">${esc(conv.nome)}</div>
+        <div class="chat-header-meta">
+          <span class="chip">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+            ${esc(conv.numero)}
+          </span>
+          ${conv.codigo ? `<span class="chip">Cód.: <strong>${esc(conv.codigo)}</strong></span>` : ''}
+          ${cnpj ? `<span class="chip">CNPJ: <strong>${cnpj}</strong></span>` : ''}
+        </div>
+      </div>
+    </div>
+    <div class="messages scrollbar-soft" id="msgs-container">
+      <div class="msg-loading">
+        <svg class="spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg>
+        Carregando mensagens&hellip;
+      </div>
+    </div>
+    <div class="chat-input-area">
+      <textarea id="msg-input" placeholder="Digite uma mensagem…" rows="1"
+        onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+      <button class="send-btn" id="send-btn" onclick="enviarMensagem()" title="Enviar (Enter)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+      </button>
+    </div>`;
+  setTimeout(() => { const i = document.getElementById('msg-input'); if (i) i.focus(); }, 50);
+}
+
+// ─────────────────── MENSAGENS ───────────────────
+async function carregarMensagens(conv, silencioso = false) {
+  if (!sb || !conv) return;
+  try {
+    const { data, error } = await sb.from('mensagens')
+      .select('*').eq('numero_whatsapp', conv.numero)
+      .order('created_at', { ascending: true }).limit(200);
+    if (error) throw error;
+    if (data) {
+      conv.msgs = data;
+      const container = document.getElementById('msgs-container');
+      if (container) renderMensagens(data, container, silencioso);
+    }
+  } catch(e) {
+    console.error(e);
+    const container = document.getElementById('msgs-container');
+    if (container && !silencioso)
+      container.innerHTML = `<div class="msg-error">Erro ao carregar mensagens: ${esc(e.message || e)}</div>`;
+  }
+}
+
+function renderMensagens(msgs, container, silencioso = false) {
+  if (!container) return;
+  const estaNoFundo = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+  if (!msgs.length) { container.innerHTML = '<div class="msg-empty">Sem mensagens registradas para este número.</div>'; return; }
+  let html = '';
+  let ultimaData = '';
+  for (const m of msgs) {
+    const dataMsg = parseSupabaseTs(m.created_at).toLocaleDateString('pt-BR', { timeZone: TZ });
+    if (dataMsg !== ultimaData) {
+      html += `<div class="date-separator"><span>${fmtDataDivisor(m.created_at)}</span></div>`;
+      ultimaData = dataMsg;
+    }
+    html += renderBolha(m);
+  }
+  container.innerHTML = html;
+  if (!silencioso || estaNoFundo) container.scrollTop = container.scrollHeight;
+}
+
+function renderBolha(m) {
+  const dir   = m.direcao === 'outbound' ? 'out' : 'in';
+  const tsRaw = m.timestamp_meta ? new Date(m.timestamp_meta) : parseSupabaseTs(m.created_at);
+  const hora  = tsRaw.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit', timeZone: TZ });
+  const checkSvg = dir === 'out'
+    ? `<span class="bubble-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>` : '';
+  let conteudo = '';
+  if (m.tipo === 'document' || m.nome_arquivo) {
+    const docName = m.nome_arquivo || 'Documento';
+    conteudo = `
+      <div class="doc-bubble">
+        <div class="doc-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        </div>
+        <div class="doc-info">
+          <div class="doc-name">${esc(docName)}</div>
+          <div class="doc-meta">${/\.pdf$/i.test(docName) ? 'PDF · ASO' : 'Documento'}</div>
+        </div>
+      </div>`;
+  } else {
+    conteudo = `<div class="bubble-text">${esc(m.conteudo || '')}</div>`;
+  }
+  return `
+    <div class="msg-row ${dir}">
+      <div class="msg-stack">
+        <div class="bubble">
+          ${conteudo}
+          <div class="bubble-meta"><span class="bubble-time">${hora}</span>${checkSvg}</div>
+        </div>
+      </div>
+    </div>`;
+}
+
+// ─────────────────── ENVIAR ───────────────────
+async function enviarMensagem() {
+  if (!convAtiva) return;
+  const input = document.getElementById('msg-input');
+  const texto = input.value.trim();
+  if (!texto) return;
+  const btn = document.getElementById('send-btn');
+  btn.disabled = true;
+  input.value  = '';
+  autoResize(input);
+  try {
+    const numero = convAtiva.numero;
+    const resp   = await fetch('/.netlify/functions/enviar-mensagem', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ numero, texto }),
+    });
+    const contentType = resp.headers.get('content-type') || '';
+    const data = contentType.includes('application/json')
+      ? await resp.json()
+      : { error: `Endpoint de envio indisponível (${resp.status}). Verifique se a função Netlify enviar-mensagem foi publicada.` };
+    if (!resp.ok) throw new Error(data.error || 'Erro ao enviar');
+    const wamid = data.messages?.[0]?.id || '';
+    await sb.from('mensagens').insert({
+      codigo_empresa: convAtiva.codigo || null, nome_empresa: convAtiva.nome,
+      numero_whatsapp: numero, direcao: 'outbound', tipo: 'text', conteudo: texto, wamid,
+    });
+    await carregarMensagens(convAtiva);
+    toast('Mensagem enviada', 'ok');
+  } catch(e) {
+    toast('Erro: ' + e.message, 'err');
+    input.value = texto;
+    autoResize(input);
+  } finally {
+    btn.disabled = false;
+    input.focus();
+  }
+}
+
+function handleKey(e)  { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviarMensagem(); } }
+function autoResize(el){ el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 140) + 'px'; }
+
+// ─────────────────── DASHBOARD ───────────────────
+async function carregarDashboard() {
+  if (!sb) return;
+  try {
+    const { data, error } = await sb.from('asos_enviados')
+      .select('chave_aso,codigo_empresa,nome_empresa,data_emissao,data_envio,enviado,numero_destino,created_at')
+      .order('created_at', { ascending: false })
+      .limit(2000);
+    if (error) throw error;
+
+    const asos     = data || [];
+    const enviados = asos.filter(a => a.enviado);
+    const pendentes= asos.filter(a => !a.enviado);
+
+    const hojeISO  = new Date().toLocaleDateString('en-CA', { timeZone: TZ });
+    const hojeEnv  = enviados.filter(a => a.data_envio === hojeISO);
+    const empresas = new Set(enviados.map(a => a.codigo_empresa).filter(Boolean));
+
+    document.getElementById('kpi-total').textContent     = enviados.length;
+    document.getElementById('kpi-total-sub').textContent = `${asos.length} registros no total`;
+    document.getElementById('kpi-pendentes').textContent = pendentes.length;
+    document.getElementById('kpi-hoje').textContent      = hojeEnv.length;
+    document.getElementById('kpi-hoje-sub').textContent  = hojeISO.split('-').reverse().join('/');
+    document.getElementById('kpi-empresas').textContent  = empresas.size;
+
+    // Gráfico — últimos 30 dias
+    const dias = {};
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      dias[d.toLocaleDateString('en-CA', { timeZone: TZ })] = 0;
+    }
+    for (const a of enviados) {
+      if (a.data_envio && Object.prototype.hasOwnProperty.call(dias, a.data_envio))
+        dias[a.data_envio]++;
+    }
+    const labels = Object.keys(dias).map(d => { const [,m,day] = d.split('-'); return `${day}/${m}`; });
+    renderDashChart(labels, Object.values(dias));
+
+    // Tabela recentes
+    const recentes = enviados.slice(0, 12);
+    const tbody = document.getElementById('dash-recentes-body');
+    if (!recentes.length) {
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--ink-400);padding:24px">Nenhum ASO enviado ainda.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = recentes.map(a => `
+      <tr>
+        <td class="td-trunc">${esc(a.nome_empresa || a.codigo_empresa || '—')}</td>
+        <td>${fmtISODate(a.data_emissao)}</td>
+        <td>${fmtISODate(a.data_envio)}</td>
+        <td><span class="badge badge-green">Enviado</span></td>
+        <td class="td-mono">${esc(a.numero_destino || '—')}</td>
+      </tr>`).join('');
+
+  } catch(e) {
+    console.error(e);
+    toast('Erro ao carregar dashboard: ' + (e.message || e), 'err');
+  }
+}
+
+function renderDashChart(labels, values) {
+  const ctx = document.getElementById('dash-chart');
+  if (!ctx) return;
+  if (dashChart) { dashChart.destroy(); dashChart = null; }
+  dashChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'ASOs enviados',
+        data: values,
+        backgroundColor: '#0F746C',
+        borderRadius: 4,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: items => items[0].label,
+            label: item  => `${item.raw} ASO${item.raw !== 1 ? 's' : ''}`,
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          ticks: { font: { size: 10 }, color: '#8C95B2', maxTicksLimit: 15 },
+          border: { display: false },
+        },
+        y: {
+          grid: { color: '#E8EBF3' },
+          ticks: { font: { size: 10 }, color: '#8C95B2', stepSize: 1, precision: 0 },
+          border: { display: false },
+          beginAtZero: true,
+        }
+      }
+    }
+  });
+}
+
+// ─────────────────── ASOs LIST ───────────────────
+async function carregarASOs() {
+  if (!sb) return;
+  const tbody = document.getElementById('asos-tbody');
+  tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--ink-400);padding:32px">Carregando…</td></tr>`;
+  try {
+    const { data, error } = await sb.from('asos_enviados')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(1000);
+    if (error) throw error;
+    todosASOs = data || [];
+    aplicarFiltrosASO();
+  } catch(e) {
+    console.error(e);
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--rose-700);padding:32px">Erro: ${esc(e.message||e)}</td></tr>`;
+  }
+}
+
+function filtrarTabASO(tab) {
+  asoFiltroTab = tab;
+  ['todos','enviados','pend'].forEach(t =>
+    document.getElementById('ftab-' + t).classList.toggle('active', t === tab || (t==='pend' && tab==='pendentes')));
+  // fix active for 'pendentes' → mapped to 'pend' id
+  document.getElementById('ftab-todos').classList.toggle('active',    tab === 'todos');
+  document.getElementById('ftab-enviados').classList.toggle('active', tab === 'enviados');
+  document.getElementById('ftab-pend').classList.toggle('active',     tab === 'pendentes');
+  aplicarFiltrosASO();
+}
+
+function aplicarFiltrosASO() {
+  const q = (document.getElementById('asos-search').value || '').toLowerCase().trim();
+  let lista = todosASOs;
+
+  if (asoFiltroTab === 'enviados')  lista = lista.filter(a =>  a.enviado);
+  if (asoFiltroTab === 'pendentes') lista = lista.filter(a => !a.enviado);
+
+  if (q) lista = lista.filter(a =>
+    (a.nome_empresa   || '').toLowerCase().includes(q) ||
+    (a.codigo_empresa || '').toLowerCase().includes(q) ||
+    (a.chave_aso      || '').toLowerCase().includes(q) ||
+    (a.numero_destino || '').includes(q));
+
+  document.getElementById('asos-count').textContent = `${lista.length} registro${lista.length !== 1 ? 's' : ''}`;
+  renderASOs(lista);
+}
+
+function renderASOs(lista) {
+  const tbody = document.getElementById('asos-tbody');
+  if (!lista.length) {
+    tbody.innerHTML = `<tr><td colspan="7" class="empty-state">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      Nenhum ASO encontrado com os filtros selecionados.
+    </td></tr>`;
+    return;
+  }
+  tbody.innerHTML = lista.map((a, i) => {
+    const badge = a.enviado
+      ? `<span class="badge badge-green">Enviado</span>`
+      : `<span class="badge badge-amber">Pendente</span>`;
+    return `
+      <tr>
+        <td class="td-mono">${i + 1}</td>
+        <td class="td-trunc" title="${esc(a.nome_empresa||'')}">${esc(a.nome_empresa || '—')}</td>
+        <td class="td-mono">${esc(a.codigo_empresa || '—')}</td>
+        <td>${fmtISODate(a.data_emissao)}</td>
+        <td>${fmtISODate(a.data_envio)}</td>
+        <td>${badge}</td>
+        <td class="td-mono">${esc(a.numero_destino || '—')}</td>
+      </tr>`;
+  }).join('');
+}
+
+// ─────────────────── HELPERS ───────────────────
+function previewMsg(m) {
+  if (!m) return '';
+  if (m.tipo === 'document' || m.nome_arquivo) return '📄 ' + (m.nome_arquivo || 'Documento');
+  return (m.conteudo || '').slice(0, 60);
+}
+
+function initials(nome) {
+  if (!nome) return '?';
+  const parts = String(nome).trim().split(/\s+/).slice(0,2);
+  return parts.map(p => p[0] ? p[0].toUpperCase() : '').join('') || '?';
+}
+
+function parseSupabaseTs(ts) {
+  if (!ts) return new Date(0);
+  if (typeof ts === 'number') return new Date(ts);
+  const s = String(ts).trim();
+  if (s.includes('Z') || /[+-]\d{2}:?\d{2}$/.test(s)) return new Date(s);
+  return new Date(s.replace(' ', 'T') + 'Z');
+}
+
+function fmtISODate(iso) {
+  if (!iso) return '—';
+  try {
+    const [y, m, d] = String(iso).split('-');
+    if (d) return `${d}/${m}/${y}`;
+    return iso;
+  } catch { return iso; }
+}
+
+function fmtTempo(ts) {
+  if (!ts) return '';
+  const d     = parseSupabaseTs(ts);
+  const now   = new Date();
+  const diff  = (now - d) / 1000;
+  const dBR   = new Date(d.toLocaleString('en-US',   { timeZone: TZ }));
+  const nowBR = new Date(now.toLocaleString('en-US', { timeZone: TZ }));
+  if (dBR.toDateString() === nowBR.toDateString())
+    return d.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit', timeZone: TZ });
+  if (diff < 604800)
+    return d.toLocaleDateString('pt-BR', { weekday:'short', timeZone: TZ });
+  return d.toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', timeZone: TZ });
+}
+
+function fmtDataDivisor(ts) {
+  if (!ts) return '';
+  const d     = parseSupabaseTs(ts);
+  const now   = new Date();
+  const dBR   = new Date(d.toLocaleString('en-US',   { timeZone: TZ }));
+  const nowBR = new Date(now.toLocaleString('en-US', { timeZone: TZ }));
+  const ontem = new Date(nowBR); ontem.setDate(ontem.getDate() - 1);
+  if (dBR.toDateString() === nowBR.toDateString()) return 'Hoje';
+  if (dBR.toDateString() === ontem.toDateString()) return 'Ontem';
+  return d.toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric', timeZone: TZ });
+}
+
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+function toast(msg, kind = 'ok') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.remove('ok','err');
+  t.classList.add(kind === 'err' ? 'err' : 'ok');
+  t.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.classList.remove('show'), 3000);
+}
+</script>
+</body>
+</html>

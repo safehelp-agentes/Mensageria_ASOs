@@ -1,34 +1,39 @@
 exports.handler = async (event) => {
+  const json = (statusCode, body) => ({
+    statusCode,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
   if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, body: 'Method Not Allowed' };
+    return json(405, { error: 'Method Not Allowed' });
   }
 
-  const token   = process.env.META_WA_TOKEN;
-  const phoneId = process.env.META_PHONE_ID;
+  const token = process.env.META_WA_TOKEN;
+  const phoneId = process.env.META_PHONE_ID || process.env.META_PHONE_NUMBER_ID;
 
   if (!token || !phoneId) {
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: 'Variáveis META_WA_TOKEN e META_PHONE_ID não configuradas no servidor.' }),
-    };
+    return json(500, {
+      error: 'Variaveis META_WA_TOKEN e META_PHONE_ID/META_PHONE_NUMBER_ID nao configuradas no servidor.',
+    });
   }
 
   let body;
   try {
-    body = JSON.parse(event.body);
+    body = JSON.parse(event.body || '{}');
   } catch {
-    return { statusCode: 400, body: JSON.stringify({ error: 'Body inválido.' }) };
+    return json(400, { error: 'Body invalido.' });
   }
 
   const { numero, texto } = body;
   if (!numero || !texto) {
-    return { statusCode: 400, body: JSON.stringify({ error: 'Campos numero e texto são obrigatórios.' }) };
+    return json(400, { error: 'Campos numero e texto sao obrigatorios.' });
   }
 
   const resp = await fetch(`https://graph.facebook.com/v19.0/${phoneId}/messages`, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${token}`,
+      Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -40,10 +45,5 @@ exports.handler = async (event) => {
   });
 
   const data = await resp.json();
-
-  return {
-    statusCode: resp.status,
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  };
+  return json(resp.status, data);
 };

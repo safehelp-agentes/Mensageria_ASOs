@@ -30,6 +30,10 @@ def chamar_exporta_dados(parametro: dict, timeout: int = 60):
     )
     response.raise_for_status()
 
+    texto = (response.text or "").strip()
+    if texto.lower() in {"sem resultado.", "sem resultado"}:
+        return []
+
     try:
         data = response.json()
     except Exception as e:

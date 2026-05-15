@@ -716,7 +716,7 @@ window.onload = async () => {
   // Copia logo do header para a tela de login
   const headerImg = document.querySelector('.dash-header .brand-logo img');
   const loginImg  = document.getElementById('login-logo-img');
-  if (headerImg && loginImg) loginImg.src = headerImg.src;
+  if (headerImg && loginImg) loginImg.setAttribute('src', headerImg.getAttribute('src'));
 
   // Event delegation: lista de conversas
   const listEl = document.getElementById('conv-list');

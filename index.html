@@ -280,6 +280,8 @@ input,textarea{font-family:inherit}
 }
 .card-title svg{width:14px;height:14px;color:var(--ink-400)}
 .chart-wrap{height:180px;position:relative}
+.chart-wrap-empresa{height:180px;overflow-y:auto}
+.chart-wrap-empresa-inner{position:relative}
 
 /* ─────────────────── DATA TABLE (shared) ─────────────────── */
 .data-table{width:100%;border-collapse:collapse}
@@ -609,13 +611,26 @@ input,textarea{font-family:inherit}
       </div>
     </div>
 
-    <div class="panel-card full">
-      <div class="card-title">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-        Envios por dia — últimos 30 dias
+    <div class="dash-row">
+      <div class="panel-card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          Envios por dia — últimos 30 dias
+        </div>
+        <div class="chart-wrap">
+          <canvas id="dash-chart"></canvas>
+        </div>
       </div>
-      <div class="chart-wrap">
-        <canvas id="dash-chart"></canvas>
+      <div class="panel-card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+          ASOs por empresa — acumulado no período
+        </div>
+        <div class="chart-wrap-empresa scrollbar-soft" id="empresa-chart-wrap">
+          <div class="chart-wrap-empresa-inner" id="empresa-chart-inner">
+            <canvas id="empresa-chart"></canvas>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -722,6 +737,7 @@ let viewAtual      = 'conversas';
 let todosASOs      = [];
 let asoFiltroTab   = 'todos';
 let dashChart      = null;
+let empresaChart   = null;
 let dashData       = null;
 
 // ─────────────────── CONFIG STORAGE ───────────────────
@@ -1252,6 +1268,7 @@ function renderDashboard() {
   }
   const labels = Object.keys(dias).map(d => { const [,m,day] = d.split('-'); return `${day}/${m}`; });
   renderDashChart(labels, Object.values(dias));
+  renderEmpresaChart(envFiltrados);
 
   // Tabela recentes
   const recentes = envFiltrados.slice(0, 12);
@@ -1316,6 +1333,79 @@ function renderDashChart(labels, values) {
           ticks: { font: { size: 10 }, color: '#8C95B2', stepSize: 1, precision: 0 },
           border: { display: false },
           beginAtZero: true,
+        }
+      }
+    }
+  });
+}
+
+function renderEmpresaChart(data) {
+  const wrap  = document.getElementById('empresa-chart-wrap');
+  const inner = document.getElementById('empresa-chart-inner');
+  const ctx   = document.getElementById('empresa-chart');
+  if (!wrap || !inner || !ctx) return;
+  if (empresaChart) { empresaChart.destroy(); empresaChart = null; }
+
+  const contagem = {};
+  for (const a of data) {
+    const nome = a.nome_empresa || a.codigo_empresa || 'Sem nome';
+    contagem[nome] = (contagem[nome] || 0) + 1;
+  }
+
+  const sorted = Object.entries(contagem).sort((a, b) => b[1] - a[1]).slice(0, 20);
+
+  if (!sorted.length) {
+    inner.style.height = '100%';
+    inner.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:180px;color:var(--ink-300);font-size:13px">Sem dados no período</div>';
+    return;
+  }
+
+  // Garante que o canvas exista após eventual substituição pelo empty state
+  if (!document.getElementById('empresa-chart')) {
+    inner.innerHTML = '<canvas id="empresa-chart"></canvas>';
+  }
+  const canvas = document.getElementById('empresa-chart');
+
+  const labels = sorted.map(([nome]) => nome.length > 30 ? nome.slice(0, 28) + '…' : nome);
+  const values = sorted.map(([, v]) => v);
+
+  inner.style.height = Math.max(180, sorted.length * 32) + 'px';
+
+  empresaChart = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'ASOs enviados',
+        data: values,
+        backgroundColor: '#044792',
+        borderRadius: 4,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: item => `${item.raw} ASO${item.raw !== 1 ? 's' : ''}`,
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: '#E8EBF3' },
+          ticks: { font: { size: 10 }, color: '#8C95B2', stepSize: 1, precision: 0 },
+          border: { display: false },
+          beginAtZero: true,
+        },
+        y: {
+          grid: { display: false },
+          ticks: { font: { size: 11 }, color: '#5A6485' },
+          border: { display: false },
         }
       }
     }

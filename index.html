@@ -232,7 +232,7 @@ input,textarea{font-family:inherit}
 .view-panel.active{display:flex}
 
 /* ─────────────────── DASHBOARD ─────────────────── */
-.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;flex-shrink:0}
+.kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;flex-shrink:0}
 .kpi-card{
   background:#fff;border-radius:var(--radius-card);
   box-shadow:var(--shadow-card);padding:18px 20px;
@@ -247,6 +247,26 @@ input,textarea{font-family:inherit}
 .kpi-value{font-size:32px;font-weight:700;color:var(--ink-900);line-height:1.1;font-variant-numeric:tabular-nums}
 .kpi-sub{font-size:11px;color:var(--ink-400);margin-top:2px}
 
+.dash-filters{
+  display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;flex-shrink:0;
+  background:#fff;border-radius:var(--radius-card);
+  box-shadow:var(--shadow-card);padding:14px 16px;
+}
+.dash-filter-group{display:flex;flex-direction:column;gap:4px}
+.dash-filter-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-400)}
+.dash-filter-input{
+  height:34px;padding:0 10px;border-radius:6px;
+  border:1px solid var(--ink-200);font-size:13px;color:var(--ink-800);
+  background:#fff;font-family:inherit;outline:none;min-width:130px;
+}
+.dash-filter-input:focus{border-color:var(--accent)}
+.dash-filter-empresa{flex:1;min-width:180px}
+.dash-filter-clear{
+  height:34px;padding:0 14px;border-radius:6px;align-self:flex-end;
+  border:1px solid var(--ink-200);background:#fff;white-space:nowrap;
+  font-size:12px;font-weight:500;color:var(--ink-500);cursor:pointer;transition:all .15s;
+}
+.dash-filter-clear:hover{background:var(--ink-50);color:var(--ink-800)}
 .dash-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;flex-shrink:0}
 .panel-card{
   background:#fff;border-radius:var(--radius-card);
@@ -351,7 +371,8 @@ input,textarea{font-family:inherit}
 #toast.err{border-left-color:#EF4444}
 
 /* ─────────────────── RESPONSIVE ─────────────────── */
-@media (max-width:1100px){.kpi-grid{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:1300px){.kpi-grid{grid-template-columns:repeat(3,1fr)}}
+@media (max-width:900px){.kpi-grid{grid-template-columns:repeat(2,1fr)}}
 @media (max-width:900px){
   .app{padding:14px}
   .main-card{grid-template-columns:1fr}
@@ -529,6 +550,22 @@ input,textarea{font-family:inherit}
   <!-- ─── VIEW: DASHBOARD ─── -->
   <div class="view-panel scrollbar-soft" id="panel-dashboard">
 
+    <div class="dash-filters">
+      <div class="dash-filter-group">
+        <label class="dash-filter-label">De</label>
+        <input type="date" id="df-inicio" class="dash-filter-input" onchange="renderDashboard()">
+      </div>
+      <div class="dash-filter-group">
+        <label class="dash-filter-label">Até</label>
+        <input type="date" id="df-fim" class="dash-filter-input" onchange="renderDashboard()">
+      </div>
+      <div class="dash-filter-group dash-filter-empresa">
+        <label class="dash-filter-label">Empresa</label>
+        <input type="text" id="df-empresa" class="dash-filter-input" placeholder="Nome ou código…" oninput="renderDashboard()">
+      </div>
+      <button class="dash-filter-clear" onclick="limparFiltrosDash()">Limpar filtros</button>
+    </div>
+
     <div class="kpi-grid">
       <div class="kpi-card">
         <div class="kpi-icon-wrap" style="background:var(--accent-soft);color:var(--accent-deep)">
@@ -544,15 +581,23 @@ input,textarea{font-family:inherit}
         </div>
         <div class="kpi-label">Pendentes</div>
         <div class="kpi-value" id="kpi-pendentes">—</div>
-        <div class="kpi-sub">aguardando assinatura digital</div>
+        <div class="kpi-sub">sem assinatura digital</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon-wrap" style="background:#E6F9F0;color:#15803D">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        </div>
+        <div class="kpi-label">Prontos para Envio</div>
+        <div class="kpi-value" id="kpi-prontos">—</div>
+        <div class="kpi-sub">assinados, aguardando envio</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-icon-wrap" style="background:var(--brand-soft);color:var(--brand-deep)">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
         </div>
-        <div class="kpi-label">Enviados Hoje</div>
+        <div class="kpi-label">Média Diária de Envio</div>
         <div class="kpi-value" id="kpi-hoje">—</div>
-        <div class="kpi-sub" id="kpi-hoje-sub">—</div>
+        <div class="kpi-sub" id="kpi-hoje-sub">ASOs/dia</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-icon-wrap" style="background:#F0F0FF;color:#4338CA">
@@ -677,6 +722,7 @@ let viewAtual      = 'conversas';
 let todosASOs      = [];
 let asoFiltroTab   = 'todos';
 let dashChart      = null;
+let dashData       = null;
 
 // ─────────────────── CONFIG STORAGE ───────────────────
 function carregarCfg() {
@@ -1128,60 +1174,107 @@ async function carregarDashboard() {
   if (!sb) return;
   try {
     const { data, error } = await sb.from('asos_enviados')
-      .select('chave_aso,codigo_empresa,nome_empresa,data_emissao,data_envio,enviado,numero_destino,created_at')
+      .select('chave_aso,codigo_empresa,nome_empresa,data_emissao,data_envio,enviado,assinado,numero_destino,created_at')
       .order('created_at', { ascending: false })
       .limit(2000);
     if (error) throw error;
-
-    const asos     = data || [];
-    const enviados = asos.filter(a => a.enviado);
-    const pendentes= asos.filter(a => !a.enviado);
-
-    const hojeISO  = new Date().toLocaleDateString('en-CA', { timeZone: TZ });
-    const hojeEnv  = enviados.filter(a => a.data_envio === hojeISO);
-    const empresas = new Set(enviados.map(a => a.codigo_empresa).filter(Boolean));
-
-    document.getElementById('kpi-total').textContent     = enviados.length;
-    document.getElementById('kpi-total-sub').textContent = `${asos.length} registros no total`;
-    document.getElementById('kpi-pendentes').textContent = pendentes.length;
-    document.getElementById('kpi-hoje').textContent      = hojeEnv.length;
-    document.getElementById('kpi-hoje-sub').textContent  = hojeISO.split('-').reverse().join('/');
-    document.getElementById('kpi-empresas').textContent  = empresas.size;
-
-    // Gráfico — últimos 30 dias
-    const dias = {};
-    for (let i = 29; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      dias[d.toLocaleDateString('en-CA', { timeZone: TZ })] = 0;
-    }
-    for (const a of enviados) {
-      if (a.data_envio && Object.prototype.hasOwnProperty.call(dias, a.data_envio))
-        dias[a.data_envio]++;
-    }
-    const labels = Object.keys(dias).map(d => { const [,m,day] = d.split('-'); return `${day}/${m}`; });
-    renderDashChart(labels, Object.values(dias));
-
-    // Tabela recentes
-    const recentes = enviados.slice(0, 12);
-    const tbody = document.getElementById('dash-recentes-body');
-    if (!recentes.length) {
-      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--ink-400);padding:24px">Nenhum ASO enviado ainda.</td></tr>`;
-      return;
-    }
-    tbody.innerHTML = recentes.map(a => `
-      <tr>
-        <td class="td-trunc">${esc(a.nome_empresa || a.codigo_empresa || '—')}</td>
-        <td>${fmtISODate(a.data_emissao)}</td>
-        <td>${fmtISODate(a.data_envio)}</td>
-        <td><span class="badge badge-green">Enviado</span></td>
-        <td class="td-mono">${esc(a.numero_destino || '—')}</td>
-      </tr>`).join('');
-
+    dashData = data || [];
+    renderDashboard();
   } catch(e) {
     console.error(e);
     toast('Erro ao carregar dashboard: ' + (e.message || e), 'err');
   }
+}
+
+function renderDashboard() {
+  if (!dashData) return;
+
+  const inicio  = document.getElementById('df-inicio')?.value  || '';
+  const fim     = document.getElementById('df-fim')?.value     || '';
+  const empresa = (document.getElementById('df-empresa')?.value || '').toLowerCase().trim();
+  const temFiltro = inicio || fim || empresa;
+
+  let asos = dashData;
+
+  if (empresa) {
+    asos = asos.filter(a =>
+      (a.nome_empresa    || '').toLowerCase().includes(empresa) ||
+      (a.codigo_empresa  || '').includes(empresa)
+    );
+  }
+
+  const enviados    = asos.filter(a => a.enviado);
+  const naoEnviados = asos.filter(a => !a.enviado);
+
+  const envFiltrados = enviados.filter(a => {
+    if (inicio && (!a.data_envio  || a.data_envio  < inicio)) return false;
+    if (fim    && (!a.data_envio  || a.data_envio  > fim))    return false;
+    return true;
+  });
+
+  const naoenFiltrados = naoEnviados.filter(a => {
+    if (inicio && (!a.data_emissao || a.data_emissao < inicio)) return false;
+    if (fim    && (!a.data_emissao || a.data_emissao > fim))    return false;
+    return true;
+  });
+
+  const prontos   = naoenFiltrados.filter(a =>  a.assinado);
+  const pendentes = naoenFiltrados.filter(a => !a.assinado);
+
+  const diasComEnvio = new Set(envFiltrados.map(a => a.data_envio).filter(Boolean)).size;
+  const mediaDiaria  = diasComEnvio > 0
+    ? (envFiltrados.length / diasComEnvio).toFixed(1)
+    : '—';
+  const empresas = new Set(envFiltrados.map(a => a.codigo_empresa).filter(Boolean));
+
+  document.getElementById('kpi-total').textContent     = envFiltrados.length;
+  document.getElementById('kpi-total-sub').textContent = temFiltro
+    ? `filtrado de ${dashData.length} registros`
+    : `${dashData.length} registros no total`;
+  document.getElementById('kpi-pendentes').textContent = pendentes.length;
+  document.getElementById('kpi-prontos').textContent   = prontos.length;
+  document.getElementById('kpi-hoje').textContent      = mediaDiaria;
+  document.getElementById('kpi-hoje-sub').textContent  = diasComEnvio > 0
+    ? `em ${diasComEnvio} dia${diasComEnvio !== 1 ? 's' : ''} com envio`
+    : 'nenhum envio no período';
+  document.getElementById('kpi-empresas').textContent  = empresas.size;
+
+  // Gráfico — últimos 30 dias
+  const dias = {};
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    dias[d.toLocaleDateString('en-CA', { timeZone: TZ })] = 0;
+  }
+  for (const a of envFiltrados) {
+    if (a.data_envio && Object.prototype.hasOwnProperty.call(dias, a.data_envio))
+      dias[a.data_envio]++;
+  }
+  const labels = Object.keys(dias).map(d => { const [,m,day] = d.split('-'); return `${day}/${m}`; });
+  renderDashChart(labels, Object.values(dias));
+
+  // Tabela recentes
+  const recentes = envFiltrados.slice(0, 12);
+  const tbody = document.getElementById('dash-recentes-body');
+  if (!recentes.length) {
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--ink-400);padding:24px">Nenhum ASO enviado no período.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = recentes.map(a => `
+    <tr>
+      <td class="td-trunc">${esc(a.nome_empresa || a.codigo_empresa || '—')}</td>
+      <td>${fmtISODate(a.data_emissao)}</td>
+      <td>${fmtISODate(a.data_envio)}</td>
+      <td><span class="badge badge-green">Enviado</span></td>
+      <td class="td-mono">${esc(a.numero_destino || '—')}</td>
+    </tr>`).join('');
+}
+
+function limparFiltrosDash() {
+  document.getElementById('df-inicio').value  = '';
+  document.getElementById('df-fim').value     = '';
+  document.getElementById('df-empresa').value = '';
+  renderDashboard();
 }
 
 function renderDashChart(labels, values) {
@@ -1250,9 +1343,6 @@ async function carregarASOs() {
 
 function filtrarTabASO(tab) {
   asoFiltroTab = tab;
-  ['todos','enviados','pend'].forEach(t =>
-    document.getElementById('ftab-' + t).classList.toggle('active', t === tab || (t==='pend' && tab==='pendentes')));
-  // fix active for 'pendentes' → mapped to 'pend' id
   document.getElementById('ftab-todos').classList.toggle('active',    tab === 'todos');
   document.getElementById('ftab-enviados').classList.toggle('active', tab === 'enviados');
   document.getElementById('ftab-pend').classList.toggle('active',     tab === 'pendentes');
@@ -1260,7 +1350,7 @@ function filtrarTabASO(tab) {
 }
 
 function aplicarFiltrosASO() {
-  const q = (document.getElementById('asos-search').value || '').toLowerCase().trim();
+  const q   = (document.getElementById('asos-search').value || '').toLowerCase().trim();
   let lista = todosASOs;
 
   if (asoFiltroTab === 'enviados')  lista = lista.filter(a =>  a.enviado);
@@ -1289,6 +1379,7 @@ function renderASOs(lista) {
     const badge = a.enviado
       ? `<span class="badge badge-green">Enviado</span>`
       : `<span class="badge badge-amber">Pendente</span>`;
+
     return `
       <tr>
         <td class="td-mono">${i + 1}</td>

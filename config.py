@@ -48,7 +48,7 @@ CODIGO_EXPORTA_GED      = "191710"
 CODIGO_EXPORTA_CONTATOS = "193815"
 CODIGO_TIPO_GED_ASO     = "38"
 
-SOC_CHAVE_CONTATOS                 = (os.getenv("SOC_CHAVE_CONTATOS") or "5fc7d830a2f31f0afa69").strip()
+SOC_CHAVE_CONTATOS                 = (os.getenv("SOC_CHAVE_CONTATOS") or "").strip()
 SOC_EXPORTA_CONTATOS_USUARIO       = (os.getenv("SOC_EXPORTA_CONTATOS_USUARIO") or CODIGO_USUARIO).strip()
 SOC_EXPORTA_CONTATOS_IDENTIFICACAO = (os.getenv("SOC_EXPORTA_CONTATOS_IDENTIFICACAO") or "").strip()
 SOC_EXPORTA_CONTATOS_CODIGO_PERFIL = (os.getenv("SOC_EXPORTA_CONTATOS_CODIGO_PERFIL") or "").strip()
@@ -74,8 +74,3 @@ META_TESTAR_SEM_ASO  = (os.getenv("META_TESTAR_SEM_ASO") or "false").strip().low
 META_TIMEOUT         = 60
 META_API_VERSION     = "v19.0"
 
-# ── Email ──────────────────────────────────────────────────────────────────────
-EMAIL_REMETENTE = (os.getenv("EMAIL_REMETENTE") or "").strip()
-EMAIL_SENHA_APP = (os.getenv("EMAIL_SENHA_APP") or "").strip()
-EMAIL_DESTINO   = (os.getenv("EMAIL_DESTINO") or "").strip()
-EMAIL_ENVIAR    = (os.getenv("EMAIL_ENVIAR") or "false").strip().lower() == "true"

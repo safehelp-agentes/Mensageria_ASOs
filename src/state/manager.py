@@ -1,6 +1,3 @@
-from src.soc.api import esta_assinado_digitalmente
-
-
 def chave_aso(reg: dict) -> str:
     return (
         f"{str(reg.get('CD_EMPRESA', '')).strip()}"
@@ -22,8 +19,3 @@ def filtrar_nao_enviados(registros: list, chaves_enviadas: set) -> list:
     return resultado
 
 
-def separar_por_assinatura(registros: list) -> tuple:
-    """Retorna (assinados, nao_assinados)."""
-    assinados     = [r for r in registros if     esta_assinado_digitalmente(r)]
-    nao_assinados = [r for r in registros if not esta_assinado_digitalmente(r)]
-    return assinados, nao_assinados

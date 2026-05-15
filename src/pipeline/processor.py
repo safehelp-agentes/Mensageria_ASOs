@@ -19,11 +19,11 @@ def _montar_nome_arquivo_saida(nome_base: str, tipo: str) -> str:
     return f"{nome_base}.{tipo}" if tipo in ("pdf", "zip") else f"{nome_base}.bin"
 
 
-def coletar_asos_por_data(data_consulta: str) -> list:
-    """Busca ASOs de todas as empresas para a data informada."""
+def coletar_asos_por_data(data_inicio: str, data_fim: str) -> list:
+    """Busca ASOs de todas as empresas no intervalo [data_inicio, data_fim] (DD/MM/YYYY)."""
     empresas = buscar_empresas()
     print(f"Total de empresas consideradas: {len(empresas)}")
-    print(f"Data consultada: {data_consulta}")
+    print(f"Período consultado: {data_inicio} → {data_fim}")
 
     resultados = []
 
@@ -35,8 +35,8 @@ def coletar_asos_por_data(data_consulta: str) -> list:
 
         registros = buscar_asos_empresa(
             codigo_empresa_cliente=codigo_empresa,
-            data_inicio=data_consulta,
-            data_fim=data_consulta,
+            data_inicio=data_inicio,
+            data_fim=data_fim,
         )
 
         for reg in registros:

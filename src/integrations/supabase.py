@@ -1,6 +1,7 @@
 import os
 import requests
 
+from src.utils.helpers import _requisicao_com_retry
 
 SUPABASE_URL        = os.getenv("SUPABASE_URL", "").strip()
 SUPABASE_SECRET_KEY = os.getenv("SUPABASE_SECRET_KEY", "").strip()
@@ -38,16 +39,12 @@ def upsert_empresa(codigo: str, nome: str, cnpj: str = "", telefone: str = ""):
     if not SUPABASE_ATIVO:
         return
     try:
-        resp = requests.post(
+        resp = _requisicao_com_retry(
+            requests.post,
             _url("empresas"),
             headers={**_headers(), "Prefer": "resolution=merge-duplicates,return=minimal"},
             params={"on_conflict": "codigo"},
-            json={
-                "codigo":   codigo,
-                "nome":     nome,
-                "cnpj":     cnpj,
-                "telefone": telefone,
-            },
+            json={"codigo": codigo, "nome": nome, "cnpj": cnpj, "telefone": telefone},
             timeout=10,
         )
         if resp.status_code >= 300:
@@ -58,36 +55,13 @@ def upsert_empresa(codigo: str, nome: str, cnpj: str = "", telefone: str = ""):
 
 # ── ASOs enviados ─────────────────────────────────────────
 
-def buscar_pendentes() -> list:
-    """Retorna registros com enviado=False do Supabase para revisita."""
-    if not SUPABASE_ATIVO:
-        return []
-    try:
-        resp = requests.get(
-            _url("asos_enviados"),
-            headers=_headers(),
-            params={
-                "enviado":  "eq.false",
-                "assinado": "eq.false",
-                "select":   "chave_aso,codigo_empresa,nome_empresa,data_emissao",
-            },
-            timeout=15,
-        )
-        if resp.status_code >= 300:
-            print(f"[SUPABASE] Erro ao buscar pendentes: {resp.text[:200]}")
-            return []
-        return resp.json()
-    except Exception as e:
-        print(f"[SUPABASE] Erro ao buscar pendentes: {e}")
-        return []
-
-
 def buscar_chaves_enviadas() -> set:
     """Retorna set de chaves de ASOs com enviado=True no Supabase."""
     if not SUPABASE_ATIVO:
         return set()
     try:
-        resp = requests.get(
+        resp = _requisicao_com_retry(
+            requests.get,
             _url("asos_enviados"),
             headers=_headers(),
             params={"enviado": "eq.true", "select": "chave_aso"},
@@ -100,35 +74,6 @@ def buscar_chaves_enviadas() -> set:
     except Exception as e:
         print(f"[SUPABASE] Erro ao buscar chaves enviadas: {e}")
         return set()
-
-
-def registrar_aso_pendente(chave: str, reg: dict):
-    """Insere ASO como pendente (enviado=False). Ignora se já existir (evita sobrescrever enviado=True)."""
-    if not SUPABASE_ATIVO:
-        return
-    try:
-        resp = requests.post(
-            _url("asos_enviados"),
-            headers={**_headers(), "Prefer": "resolution=ignore-duplicates,return=minimal"},
-            params={"on_conflict": "chave_aso"},
-            json={
-                "chave_aso":      chave,
-                "codigo_empresa": str(reg.get("EMPRESA_CONSULTADA", reg.get("CD_EMPRESA", ""))).strip(),
-                "nome_empresa":   reg.get("EMPRESA_NOME", ""),
-                "data_emissao":   _data_para_iso(reg.get("DT_EMISSAO", "")),
-                "enviado":        False,
-                "assinado":       False,
-                "nome_arquivo":   "",
-                "numero_destino": "",
-                "wamid":          "",
-                "status":         "pendente",
-            },
-            timeout=10,
-        )
-        if resp.status_code >= 300:
-            print(f"[SUPABASE] Erro registrar pendente {chave}: {resp.text[:200]}")
-    except Exception as e:
-        print(f"[SUPABASE] Erro registrar pendente: {e}")
 
 
 def marcar_aso_enviado(
@@ -144,7 +89,8 @@ def marcar_aso_enviado(
     if not SUPABASE_ATIVO:
         return
     try:
-        resp = requests.post(
+        resp = _requisicao_com_retry(
+            requests.post,
             _url("asos_enviados"),
             headers={**_headers(), "Prefer": "resolution=merge-duplicates,return=minimal"},
             params={"on_conflict": "chave_aso"},
@@ -180,7 +126,8 @@ def registrar_mensagem_outbound(
     if not SUPABASE_ATIVO:
         return
     try:
-        resp = requests.post(
+        resp = _requisicao_com_retry(
+            requests.post,
             _url("mensagens"),
             headers={**_headers(), "Prefer": "return=minimal"},
             json={
@@ -214,7 +161,8 @@ def registrar_mensagem_inbound(
     if not SUPABASE_ATIVO:
         return
     try:
-        resp = requests.post(
+        resp = _requisicao_com_retry(
+            requests.post,
             _url("mensagens"),
             headers={**_headers(), "Prefer": "return=minimal"},
             json={

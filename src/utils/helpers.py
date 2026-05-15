@@ -5,14 +5,9 @@ from datetime import datetime, timedelta
 
 from config import USAR_ONTEM
 
-# Lista global de erros coletados durante a execução
-erros_execucao: list[str] = []
-
 
 def registrar_erro(msg: str):
-    msg = str(msg)
-    print("ERRO REGISTRADO:", msg)
-    erros_execucao.append(msg)
+    print("ERRO REGISTRADO:", str(msg))
 
 
 def _requisicao_com_retry(metodo, url, *, tentativas=3, backoff_base=2.0, **kwargs):

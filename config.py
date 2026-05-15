@@ -55,13 +55,13 @@ SOC_EXPORTA_CONTATOS_CODIGO_PERFIL = (os.getenv("SOC_EXPORTA_CONTATOS_CODIGO_PER
 
 # ── Comportamento ──────────────────────────────────────────────────────────────
 JANELA_DIAS               = 30
-USAR_ONTEM                = False  # Controlado pelo argumento --ontem no CLI
+USAR_ONTEM                = True  # Controlado pelo argumento --ontem no CLI
 IGNORAR_EMPRESA_PRINCIPAL = False
 DELAY_ENTRE_REQUISICOES   = 0.2
 DELAY_ENTRE_DOWNLOADS     = 0.2
 ENVIO_REAL_EMPRESAS       = (os.getenv("ENVIO_REAL_EMPRESAS") or "false").strip().lower() == "true"
 
-EMPRESAS_PERMITIDAS: set = set({"1338567"})   # Vazio = todas. Ex: {"295569", "334567"}
+EMPRESAS_PERMITIDAS: set = set()   # Vazio = todas. Ex: {"295569", "334567"}
 LIMITE_EMPRESAS           = None   # None = sem limite. Ex: 5
 
 # ── Meta / WhatsApp ────────────────────────────────────────────────────────────

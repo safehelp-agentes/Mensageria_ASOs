@@ -11,6 +11,7 @@ from config import (
 )
 from src.utils.helpers import (
     registrar_erro, obter_data_consulta, normalizar_numero_whatsapp,
+    numero_parece_valido,
 )
 from src.state.manager import (
     chave_aso, filtrar_nao_enviados,
@@ -32,6 +33,7 @@ from src.integrations.supabase import (
     registrar_mensagem_outbound,
     salvar_aso_pendente,
     buscar_asos_pendentes,
+    buscar_config_empresas,
 )
 
 
@@ -47,7 +49,8 @@ def _validar_numero_destino(numero_destino: str, codigo_empresa: str):
         )
 
 
-def _processar_grupo_empresas(grupos: dict, data_referencia: str) -> list:
+def _processar_grupo_empresas(grupos: dict, data_referencia: str, config_empresas: dict = None) -> list:
+    config_empresas = config_empresas or {}
     resumo = []
     print(f"\nEmpresas com ASOs a processar: {len(grupos)}")
 
@@ -63,6 +66,13 @@ def _processar_grupo_empresas(grupos: dict, data_referencia: str) -> list:
         contatos          = buscar_contatos_empresa(codigo_empresa)
         contato_escolhido = extrair_primeiro_numero_contato(contatos)
         numero_empresa    = contato_escolhido["numero"]
+
+        cfg_emp             = config_empresas.get(codigo_empresa, {})
+        telefone_escolhido  = cfg_emp.get("telefone_escolhido", "") or ""
+        if telefone_escolhido and numero_parece_valido(telefone_escolhido):
+            numero_empresa = normalizar_numero_whatsapp(telefone_escolhido)
+            print(f"  Usando telefone escolhido (CRM): {numero_empresa}")
+
         numero_destino    = resolver_destino_envio(numero_empresa)
 
         if not numero_empresa:
@@ -166,18 +176,21 @@ def main(usar_ontem: bool = False, data_especifica: str | None = None):
     for pasta in (PASTA_TEMP, PASTA_DEBUG, PASTA_SAIDA_LISTAGEM):
         os.makedirs(pasta, exist_ok=True)
 
-    # ── 1. Busca ASOs já enviados e pendentes no Supabase ─────────────────────
-    chaves_enviadas = buscar_chaves_enviadas()
-    pendentes       = buscar_asos_pendentes()
+    # ── 1. Busca ASOs já enviados, pendentes e config de empresas no Supabase ──
+    chaves_enviadas  = buscar_chaves_enviadas()
+    pendentes        = buscar_asos_pendentes()
+    config_empresas  = buscar_config_empresas()
+    bloqueadas       = {cod for cod, c in config_empresas.items() if c.get("bloqueada")}
     print(f"\nASOs já enviados (Supabase):  {len(chaves_enviadas)}")
     print(f"ASOs pendentes (não enviados): {len(pendentes)}")
+    print(f"Empresas bloqueadas:           {len(bloqueadas)}")
 
     # ── 2. Consulta ASOs do SOC (janela de JANELA_DIAS antes da data de referência)
     data_fim    = obter_data_consulta(usar_ontem, data_especifica)
     dt_fim      = datetime.strptime(data_fim, "%d/%m/%Y")
     data_inicio = (dt_fim - timedelta(days=JANELA_DIAS)).strftime("%d/%m/%Y")
 
-    registros_todos = coletar_asos_por_data(data_inicio, data_fim)
+    registros_todos = coletar_asos_por_data(data_inicio, data_fim, bloqueadas)
     caminho_json    = salvar_listagem_asos(registros_todos, data_fim)
     print(f"\nListagem salva em: {caminho_json}")
     print(f"Total de registros do SOC: {len(registros_todos)}")
@@ -186,9 +199,9 @@ def main(usar_ontem: bool = False, data_especifica: str | None = None):
     registros_a_processar = filtrar_nao_enviados(registros_todos, chaves_enviadas)
     print(f"Registros a processar (não enviados): {len(registros_a_processar)}")
 
-    # ── 4. Processa todas as empresas (independente de assinatura digital) ─────
+    # ── 4. Processa empresas ───────────────────────────────────────────────────
     grupos = agrupar_por_empresa(registros_a_processar)
-    resumo = _processar_grupo_empresas(grupos, data_fim)
+    resumo = _processar_grupo_empresas(grupos, data_fim, config_empresas)
 
     # ── Fallback: sem ASOs ─────────────────────────────────────────────────────
     if not grupos and META_ENVIAR and META_TESTAR_SEM_ASO:

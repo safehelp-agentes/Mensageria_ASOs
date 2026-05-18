@@ -359,6 +359,30 @@ input,textarea{font-family:inherit}
 .btn-primary{background:var(--accent);color:#fff}
 .btn-primary:hover{background:var(--accent-deep)}
 
+/* ─────────────────── TOGGLE SWITCH ─────────────────── */
+.toggle-sw{position:relative;width:36px;height:20px;display:inline-block;flex-shrink:0;vertical-align:middle}
+.toggle-sw input{display:none}
+.toggle-track{position:absolute;inset:0;background:var(--ink-200);border-radius:999px;cursor:pointer;transition:background .2s}
+.toggle-track:before{content:'';position:absolute;width:16px;height:16px;left:2px;top:2px;background:#fff;border-radius:50%;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.18)}
+.toggle-sw input:checked ~ .toggle-track{background:var(--rose-700)}
+.toggle-sw input:checked ~ .toggle-track:before{transform:translateX(16px)}
+
+/* ─────────────────── EMPRESAS PANEL ─────────────────── */
+.emp-row-blocked td{background:var(--rose-soft)!important}
+.emp-row-blocked:hover td{background:#fbd5dc!important}
+.emp-tel-btn{
+  display:inline-flex;align-items:center;gap:6px;
+  background:var(--ink-50);border:1px solid var(--ink-200);
+  border-radius:6px;padding:4px 10px;font-size:12px;
+  font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+  color:var(--ink-700);cursor:pointer;transition:border-color .15s;
+  white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis;
+}
+.emp-tel-btn:hover{border-color:var(--accent);background:#fff}
+.emp-tel-btn svg{flex-shrink:0;width:12px;height:12px;color:var(--ink-400)}
+.emp-tel-placeholder{color:var(--ink-300);font-style:italic;font-family:inherit}
+.badge-rose{background:var(--rose-soft);color:var(--rose-700)}
+
 /* ─────────────────── TOAST ─────────────────── */
 #toast{
   position:fixed;bottom:24px;right:24px;
@@ -493,6 +517,10 @@ input,textarea{font-family:inherit}
         <button id="tab-asos" class="tab-btn" type="button" onclick="trocarView('asos')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
           ASOs
+        </button>
+        <button id="tab-empresas" class="tab-btn" type="button" onclick="trocarView('empresas')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-4 0v2"/><path d="M8 7V5a2 2 0 0 0-4 0v2"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="10" y1="14" x2="14" y2="14"/></svg>
+          Empresas
         </button>
       </nav>
     </div>
@@ -698,6 +726,41 @@ input,textarea{font-family:inherit}
 
   </div><!-- /panel-asos -->
 
+  <!-- ─── VIEW: EMPRESAS ─── -->
+  <div class="view-panel" id="panel-empresas" style="gap:12px">
+
+    <div class="panel-toolbar">
+      <div class="panel-search-wrap">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input class="panel-search" id="emp-search" type="text" placeholder="Buscar empresa, código ou CNPJ..." oninput="renderEmpresas()">
+      </div>
+      <span class="panel-count" id="emp-count"></span>
+      <div style="display:flex;align-items:center;gap:10px;margin-left:auto;font-size:12px;color:var(--ink-400)">
+        <span><span class="badge badge-green">Ativo</span> &nbsp;recebe ASOs</span>
+        <span><span class="badge badge-rose">Bloqueado</span> &nbsp;não recebe</span>
+      </div>
+    </div>
+
+    <div class="table-card scrollbar-soft">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Código</th>
+            <th>Empresa</th>
+            <th>CNPJ</th>
+            <th>Tel. SOC</th>
+            <th>Tel. Escolhido</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="emp-tbody">
+          <tr><td colspan="6" style="text-align:center;color:var(--ink-400);padding:32px">Carregando…</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div><!-- /panel-empresas -->
+
 </div><!-- /app -->
 
 <!-- MODAL CONFIG -->
@@ -716,6 +779,32 @@ input,textarea{font-family:inherit}
   </div>
 </div>
 
+<!-- MODAL EMPRESA (telefone escolhido) -->
+<div class="modal-overlay" id="modal-empresa">
+  <div class="modal">
+    <h3>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+      Telefone Escolhido
+    </h3>
+    <p style="font-size:13px;color:var(--ink-500);margin-bottom:16px;line-height:1.5">
+      Quando preenchido, este número será usado no lugar do telefone que vem do SOC. Deixe em branco para voltar a usar o SOC.
+    </p>
+    <div class="field">
+      <label>Empresa</label>
+      <input type="text" id="emp-modal-nome" readonly style="background:var(--ink-50);cursor:default;color:var(--ink-500)">
+    </div>
+    <div class="field">
+      <label>Telefone Escolhido</label>
+      <input type="text" id="emp-tel-input" placeholder="Ex: 5541999999999" autocomplete="off" onkeydown="if(event.key==='Enter')salvarTelefoneEscolhido()">
+    </div>
+    <p style="font-size:11px;color:var(--ink-400);margin-top:-8px;margin-bottom:4px">Formato internacional: 55 + DDD + número (ex: 5541999999999)</p>
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="fecharModalEmpresa()">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarTelefoneEscolhido()">Salvar</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
@@ -726,19 +815,21 @@ const DEFAULTS = {
 };
 const TZ = 'America/Sao_Paulo';
 
-let cfg            = {};
-let sb             = null;
-let convAtiva      = null;
-let pollInterval   = null;
-let abaFiltro      = 'todos';
-let todasConversas = [];
-let empresasMap    = new Map();
-let viewAtual      = 'conversas';
-let todosASOs      = [];
-let asoFiltroTab   = 'todos';
-let dashChart      = null;
-let empresaChart   = null;
-let dashData       = null;
+let cfg              = {};
+let sb               = null;
+let convAtiva        = null;
+let pollInterval     = null;
+let abaFiltro        = 'todos';
+let todasConversas   = [];
+let empresasMap      = new Map();
+let viewAtual        = 'conversas';
+let todosASOs        = [];
+let asoFiltroTab     = 'todos';
+let dashChart        = null;
+let empresaChart     = null;
+let dashData         = null;
+let todasEmpresas    = [];
+let editandoEmpresa  = null;
 
 // ─────────────────── CONFIG STORAGE ───────────────────
 function carregarCfg() {
@@ -813,7 +904,7 @@ window.onload = async () => {
 };
 
 function inicializar() {
-  carregarEmpresas();
+  carregarEmpresasMap();
   carregarConversas();
   if (pollInterval) clearInterval(pollInterval);
   pollInterval = setInterval(() => {
@@ -880,6 +971,7 @@ async function fazerLogout() {
   convAtiva      = null;
   todasConversas = [];
   todosASOs      = [];
+  todasEmpresas  = [];
   mostrarLogin();
   toast('Sessão encerrada', 'ok');
 }
@@ -908,15 +1000,17 @@ setInterval(atualizarHoraHeader, 30000);
 // ─────────────────── VIEW SWITCHING ───────────────────
 function trocarView(view) {
   viewAtual = view;
-  ['conversas','dashboard','asos'].forEach(v => {
+  ['conversas','dashboard','asos','empresas'].forEach(v => {
     document.getElementById('tab-' + v).classList.toggle('active', v === view);
   });
   document.getElementById('main-card').style.display    = view === 'conversas' ? '' : 'none';
   document.getElementById('panel-dashboard').classList.toggle('active', view === 'dashboard');
   document.getElementById('panel-asos').classList.toggle('active', view === 'asos');
+  document.getElementById('panel-empresas').classList.toggle('active', view === 'empresas');
 
   if (view === 'dashboard') carregarDashboard();
   if (view === 'asos')      carregarASOs();
+  if (view === 'empresas')  carregarEmpresasPainel();
 }
 
 function refreshAtual() {
@@ -924,14 +1018,15 @@ function refreshAtual() {
   if (icon) icon.classList.add('spinner');
   setTimeout(() => { if (icon) icon.classList.remove('spinner'); }, 600);
 
-  if (viewAtual === 'conversas') carregarConversas();
+  if (viewAtual === 'conversas')      carregarConversas();
   else if (viewAtual === 'dashboard') carregarDashboard();
   else if (viewAtual === 'asos')      carregarASOs();
+  else if (viewAtual === 'empresas')  carregarEmpresasPainel();
   atualizarHoraHeader();
 }
 
-// ─────────────────── EMPRESAS ───────────────────
-async function carregarEmpresas() {
+// ─────────────────── EMPRESAS MAP (para chat) ───────────────────
+async function carregarEmpresasMap() {
   if (!sb) return;
   try {
     const { data, error } = await sb.from('empresas').select('codigo,nome,cnpj,telefone');
@@ -942,6 +1037,135 @@ async function carregarEmpresas() {
     }
   } catch(e) { console.warn('Falha ao carregar empresas:', e); }
 }
+
+// ─────────────────── EMPRESAS PAINEL ───────────────────
+async function carregarEmpresasPainel() {
+  if (!sb) return;
+  const tbody = document.getElementById('emp-tbody');
+  if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--ink-400);padding:32px">Carregando…</td></tr>`;
+  try {
+    const { data, error } = await sb.from('empresas').select('*').order('nome');
+    if (error) throw error;
+    todasEmpresas = data || [];
+    renderEmpresas();
+  } catch(e) {
+    console.error(e);
+    if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--rose-700);padding:32px">Erro: ${esc(e.message||e)}</td></tr>`;
+  }
+}
+
+function renderEmpresas() {
+  const q = (document.getElementById('emp-search')?.value || '').toLowerCase().trim();
+  let lista = todasEmpresas;
+  if (q) lista = lista.filter(e =>
+    (e.nome  ||'').toLowerCase().includes(q) ||
+    (e.codigo||'').toLowerCase().includes(q) ||
+    (e.cnpj  ||'').toLowerCase().includes(q));
+
+  const countEl = document.getElementById('emp-count');
+  if (countEl) countEl.textContent = `${lista.length} empresa${lista.length !== 1 ? 's' : ''}`;
+
+  const tbody = document.getElementById('emp-tbody');
+  if (!tbody) return;
+
+  if (!lista.length) {
+    tbody.innerHTML = `<tr><td colspan="6" class="empty-state">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-4 0v2"/></svg>
+      Nenhuma empresa encontrada.
+    </td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = lista.map(e => {
+    const bloq  = !!e.bloqueada;
+    const rowCls = bloq ? 'emp-row-blocked' : '';
+    const badge  = bloq
+      ? `<span class="badge badge-rose">Bloqueado</span>`
+      : `<span class="badge badge-green">Ativo</span>`;
+    const telBtn = e.telefone_escolhido
+      ? `<button class="emp-tel-btn" onclick="abrirEditarTelefone('${esc(e.codigo)}')" title="Editar telefone escolhido">
+           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.21 12 19.79 19.79 0 0 1 1.14 3.37 2 2 0 0 1 3.11 1.1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7a2 2 0 0 1 1.72 2.02z"/></svg>
+           ${esc(e.telefone_escolhido)}
+         </button>`
+      : `<button class="emp-tel-btn" onclick="abrirEditarTelefone('${esc(e.codigo)}')" title="Definir telefone escolhido">
+           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+           <span class="emp-tel-placeholder">Definir…</span>
+         </button>`;
+
+    return `
+      <tr class="${rowCls}">
+        <td class="td-mono">${esc(e.codigo||'—')}</td>
+        <td class="td-trunc" title="${esc(e.nome||'')}" style="max-width:260px">${esc(e.nome||'—')}</td>
+        <td class="td-mono">${esc(e.cnpj||'—')}</td>
+        <td class="td-mono" style="color:var(--ink-500)">${esc(e.telefone||'—')}</td>
+        <td>${telBtn}</td>
+        <td>
+          <div style="display:flex;align-items:center;gap:10px">
+            ${badge}
+            <label class="toggle-sw" title="${bloq ? 'Clique para desbloquear' : 'Clique para bloquear'}">
+              <input type="checkbox" ${bloq ? 'checked' : ''} onchange="toggleBloqueada('${esc(e.codigo)}',this.checked)">
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+        </td>
+      </tr>`;
+  }).join('');
+}
+
+async function toggleBloqueada(codigo, bloquear) {
+  if (!sb) return;
+  const emp = todasEmpresas.find(e => e.codigo === codigo);
+  if (!emp) return;
+  const anterior = emp.bloqueada;
+  emp.bloqueada = bloquear;
+  renderEmpresas();
+  try {
+    const { error } = await sb.from('empresas').update({ bloqueada: bloquear }).eq('codigo', codigo);
+    if (error) throw error;
+    toast(bloquear ? 'Empresa bloqueada — não receberá ASOs.' : 'Empresa desbloqueada.', bloquear ? 'err' : 'ok');
+  } catch(e) {
+    emp.bloqueada = anterior;
+    renderEmpresas();
+    toast('Erro ao atualizar: ' + (e.message||e), 'err');
+  }
+}
+
+function abrirEditarTelefone(codigo) {
+  editandoEmpresa = todasEmpresas.find(e => e.codigo === codigo);
+  if (!editandoEmpresa) return;
+  document.getElementById('emp-modal-nome').value  = editandoEmpresa.nome || editandoEmpresa.codigo;
+  document.getElementById('emp-tel-input').value   = editandoEmpresa.telefone_escolhido || '';
+  document.getElementById('modal-empresa').classList.add('open');
+  setTimeout(() => { const i = document.getElementById('emp-tel-input'); if (i) i.focus(); }, 80);
+}
+
+function fecharModalEmpresa() {
+  document.getElementById('modal-empresa').classList.remove('open');
+  editandoEmpresa = null;
+}
+
+async function salvarTelefoneEscolhido() {
+  if (!editandoEmpresa || !sb) return;
+  const tel = (document.getElementById('emp-tel-input').value || '').trim();
+  const anterior = editandoEmpresa.telefone_escolhido;
+  try {
+    const { error } = await sb.from('empresas')
+      .update({ telefone_escolhido: tel || null })
+      .eq('codigo', editandoEmpresa.codigo);
+    if (error) throw error;
+    editandoEmpresa.telefone_escolhido = tel || null;
+    renderEmpresas();
+    fecharModalEmpresa();
+    toast(tel ? 'Telefone escolhido salvo.' : 'Telefone escolhido removido.', 'ok');
+  } catch(e) {
+    editandoEmpresa.telefone_escolhido = anterior;
+    toast('Erro ao salvar: ' + (e.message||e), 'err');
+  }
+}
+
+document.getElementById('modal-empresa').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal-empresa')) fecharModalEmpresa();
+});
 
 // ─────────────────── CONVERSAS ───────────────────
 async function carregarConversas(silencioso = false) {

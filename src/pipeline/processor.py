@@ -12,6 +12,7 @@ from config import (
 from src.utils.helpers import sanitizar_nome, registrar_erro
 from src.soc.api import buscar_empresas, buscar_asos_empresa
 from src.soc.downloader import baixar_documento
+from src.integrations.supabase import sincronizar_empresas_soc
 
 
 def _montar_nome_arquivo_saida(nome_base: str, tipo: str) -> str:
@@ -19,19 +20,34 @@ def _montar_nome_arquivo_saida(nome_base: str, tipo: str) -> str:
     return f"{nome_base}.{tipo}" if tipo in ("pdf", "zip") else f"{nome_base}.bin"
 
 
-def coletar_asos_por_data(data_inicio: str, data_fim: str) -> list:
-    """Busca ASOs de todas as empresas no intervalo [data_inicio, data_fim] (DD/MM/YYYY)."""
+def coletar_asos_por_data(data_inicio: str, data_fim: str, empresas_bloqueadas: set = None) -> list:
+    """Busca ASOs de todas as empresas no intervalo [data_inicio, data_fim] (DD/MM/YYYY).
+    Empresas em empresas_bloqueadas são ignoradas antes de qualquer consulta ao SOC.
+    """
+    empresas_bloqueadas = empresas_bloqueadas or set()
+
     empresas = buscar_empresas()
-    print(f"Total de empresas consideradas: {len(empresas)}")
+    sincronizar_empresas_soc(empresas)
+
+    empresas_ativas = [
+        emp for emp in empresas
+        if str(emp.get("CODIGO", "")).strip() not in empresas_bloqueadas
+    ]
+
+    ignoradas = len(empresas) - len(empresas_ativas)
+    print(f"Total de empresas no SOC: {len(empresas)}")
+    if ignoradas:
+        print(f"Empresas bloqueadas (sem consulta ao SOC): {ignoradas}")
+    print(f"Empresas a consultar: {len(empresas_ativas)}")
     print(f"Período consultado: {data_inicio} → {data_fim}")
 
     resultados = []
 
-    for i, emp in enumerate(empresas, start=1):
+    for i, emp in enumerate(empresas_ativas, start=1):
         codigo_empresa = str(emp.get("CODIGO", "")).strip()
         nome_empresa   = (emp.get("RAZAOSOCIAL") or emp.get("NOMEABREVIADO") or "").strip()
 
-        print(f"[{i}/{len(empresas)}] Empresa {codigo_empresa} - {nome_empresa}")
+        print(f"[{i}/{len(empresas_ativas)}] Empresa {codigo_empresa} - {nome_empresa}")
 
         registros = buscar_asos_empresa(
             codigo_empresa_cliente=codigo_empresa,

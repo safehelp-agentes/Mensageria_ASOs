@@ -53,6 +53,43 @@ def upsert_empresa(codigo: str, nome: str, cnpj: str = "", telefone: str = ""):
         print(f"[SUPABASE] Erro upsert empresa: {e}")
 
 
+def sincronizar_empresas_soc(empresas: list) -> None:
+    """Insere no Supabase as empresas do SOC que ainda não existem. Nunca altera registros existentes."""
+    if not SUPABASE_ATIVO or not empresas:
+        return
+
+    registros = []
+    for emp in empresas:
+        codigo = str(emp.get("CODIGO", "")).strip()
+        if not codigo:
+            continue
+        registros.append({
+            "codigo":   codigo,
+            "nome":     (emp.get("RAZAOSOCIAL") or emp.get("NOMEABREVIADO") or "").strip(),
+            "cnpj":     str(emp.get("CNPJ", "")).strip(),
+            "telefone": "",
+        })
+
+    if not registros:
+        return
+
+    try:
+        resp = _requisicao_com_retry(
+            requests.post,
+            _url("empresas"),
+            headers={**_headers(), "Prefer": "resolution=ignore-duplicates,return=minimal"},
+            params={"on_conflict": "codigo"},
+            json=registros,
+            timeout=30,
+        )
+        if resp.status_code >= 300:
+            print(f"[SUPABASE] Erro ao sincronizar empresas: {resp.text[:200]}")
+        else:
+            print(f"[SUPABASE] Sincronização de empresas concluída ({len(registros)} verificadas)")
+    except Exception as e:
+        print(f"[SUPABASE] Erro ao sincronizar empresas: {e}")
+
+
 # ── ASOs enviados ─────────────────────────────────────────
 
 def buscar_chaves_enviadas() -> set:
@@ -171,6 +208,34 @@ def buscar_asos_pendentes() -> list:
     except Exception as e:
         print(f"[SUPABASE] Erro buscar pendentes: {e}")
         return []
+
+
+def buscar_config_empresas() -> dict:
+    """Retorna {codigo: {bloqueada, telefone_escolhido}} para cada empresa cadastrada."""
+    if not SUPABASE_ATIVO:
+        return {}
+    try:
+        resp = _requisicao_com_retry(
+            requests.get,
+            _url("empresas"),
+            headers=_headers(),
+            params={"select": "codigo,bloqueada,telefone_escolhido"},
+            timeout=15,
+        )
+        if resp.status_code >= 300:
+            print(f"[SUPABASE] Erro buscar config empresas: {resp.text[:200]}")
+            return {}
+        return {
+            row["codigo"]: {
+                "bloqueada":          bool(row.get("bloqueada", False)),
+                "telefone_escolhido": (row.get("telefone_escolhido") or "").strip(),
+            }
+            for row in resp.json()
+            if row.get("codigo")
+        }
+    except Exception as e:
+        print(f"[SUPABASE] Erro buscar config empresas: {e}")
+        return {}
 
 
 # ── Mensagens outbound ────────────────────────────────────

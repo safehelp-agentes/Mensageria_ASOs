@@ -809,10 +809,11 @@ input,textarea{font-family:inherit}
 
 <script>
 // ─────────────────── CONFIG ───────────────────
-// Deixe url e key vazios aqui. Configure via modal de Configurações (ícone ⚙️).
+// Valores injetados pelo build do Netlify via netlify.toml.
+// Em desenvolvimento local, configure via modal ⚙️.
 const DEFAULTS = {
-  url: '',
-  key: '',
+  url: '__SUPABASE_URL__',
+  key: '__SUPABASE_KEY__',
 };
 const TZ = 'America/Sao_Paulo';
 
@@ -883,8 +884,9 @@ window.onload = async () => {
 
   atualizarHoraHeader();
 
-  // Se não há URL/chave configuradas, abre o modal de config antes de tudo
-  if (!cfg.url || !cfg.key) {
+  // Se não há URL/chave configuradas (ou placeholders não substituídos), abre config
+  const semConfig = !cfg.url || !cfg.key || cfg.url.startsWith('__') || cfg.key.startsWith('__');
+  if (semConfig) {
     mostrarLogin();
     abrirConfig();
     return;

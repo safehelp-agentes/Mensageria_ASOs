@@ -30,6 +30,8 @@ from src.integrations.supabase import (
     buscar_chaves_enviadas,
     marcar_aso_enviado,
     registrar_mensagem_outbound,
+    salvar_aso_pendente,
+    buscar_asos_pendentes,
 )
 
 
@@ -134,6 +136,23 @@ def _processar_grupo_empresas(grupos: dict, data_referencia: str) -> list:
             except Exception as e:
                 resultado["meta_erro"] = str(e)
                 registrar_erro(f"Empresa {codigo_empresa} erro envio Meta: {e}")
+                for reg in regs_empresa:
+                    salvar_aso_pendente(
+                        chave          = chave_aso(reg),
+                        codigo_empresa = codigo_empresa,
+                        nome_empresa   = nome_empresa,
+                        data_emissao   = resultado.get("data_emissao", ""),
+                        numero_destino = numero_destino,
+                    )
+
+        for reg in resultado.get("registros_com_erro", []):
+            salvar_aso_pendente(
+                chave          = chave_aso(reg),
+                codigo_empresa = codigo_empresa,
+                nome_empresa   = nome_empresa,
+                data_emissao   = resultado.get("data_emissao", ""),
+                numero_destino = numero_destino,
+            )
 
         resumo.append(resultado)
 
@@ -147,9 +166,11 @@ def main(usar_ontem: bool = False, data_especifica: str | None = None):
     for pasta in (PASTA_TEMP, PASTA_DEBUG, PASTA_SAIDA_LISTAGEM):
         os.makedirs(pasta, exist_ok=True)
 
-    # ── 1. Busca ASOs já enviados no Supabase ──────────────────────────────────
+    # ── 1. Busca ASOs já enviados e pendentes no Supabase ─────────────────────
     chaves_enviadas = buscar_chaves_enviadas()
-    print(f"\nASOs já enviados (Supabase): {len(chaves_enviadas)}")
+    pendentes       = buscar_asos_pendentes()
+    print(f"\nASOs já enviados (Supabase):  {len(chaves_enviadas)}")
+    print(f"ASOs pendentes (não enviados): {len(pendentes)}")
 
     # ── 2. Consulta ASOs do SOC (janela de JANELA_DIAS antes da data de referência)
     data_fim    = obter_data_consulta(usar_ontem, data_especifica)

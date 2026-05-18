@@ -114,6 +114,65 @@ def marcar_aso_enviado(
         print(f"[SUPABASE] Erro marcar enviado: {e}")
 
 
+def salvar_aso_pendente(
+    chave:          str,
+    codigo_empresa: str,
+    nome_empresa:   str,
+    data_emissao:   str,
+    numero_destino: str = "",
+):
+    """Registra ASO como pendente (enviado=False) para retry na próxima execução."""
+    if not SUPABASE_ATIVO:
+        return
+    try:
+        resp = _requisicao_com_retry(
+            requests.post,
+            _url("asos_enviados"),
+            headers={**_headers(), "Prefer": "resolution=merge-duplicates,return=minimal"},
+            params={"on_conflict": "chave_aso"},
+            json={
+                "chave_aso":      chave,
+                "codigo_empresa": codigo_empresa,
+                "nome_empresa":   nome_empresa,
+                "data_emissao":   _data_para_iso(data_emissao),
+                "numero_destino": numero_destino,
+                "enviado":        False,
+                "assinado":       False,
+                "status":         "pendente",
+            },
+            timeout=10,
+        )
+        if resp.status_code >= 300:
+            print(f"[SUPABASE] Erro salvar pendente {chave}: {resp.text[:200]}")
+    except Exception as e:
+        print(f"[SUPABASE] Erro salvar pendente: {e}")
+
+
+def buscar_asos_pendentes() -> list:
+    """Retorna ASOs com enviado=False (não enviados) do Supabase."""
+    if not SUPABASE_ATIVO:
+        return []
+    try:
+        resp = _requisicao_com_retry(
+            requests.get,
+            _url("asos_enviados"),
+            headers=_headers(),
+            params={
+                "enviado": "eq.false",
+                "select":  "chave_aso,codigo_empresa,nome_empresa,data_emissao,numero_destino,status",
+            },
+            timeout=15,
+        )
+        if resp.status_code >= 300:
+            print(f"[SUPABASE] Erro buscar pendentes: {resp.text[:200]}")
+            return []
+        data = resp.json()
+        return data if isinstance(data, list) else []
+    except Exception as e:
+        print(f"[SUPABASE] Erro buscar pendentes: {e}")
+        return []
+
+
 # ── Mensagens outbound ────────────────────────────────────
 
 def registrar_mensagem_outbound(

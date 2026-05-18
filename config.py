@@ -38,9 +38,9 @@ SOC_WS_USUARIO        = (os.getenv("SOC_WS_USUARIO") or "").strip()
 SOC_WS_PASSWORD       = (os.getenv("SOC_WS_PASSWORD") or "").strip()
 
 # Códigos da integração SOC. Podem mudar quando o SOC reconfigura o usuário.
-CODIGO_EMPRESA_PRINCIPAL = (os.getenv("SOC_CODIGO_EMPRESA_PRINCIPAL") or SOC_EMPRESA_PRINCIPAL or "289501").strip()
-CODIGO_RESPONSAVEL       = (os.getenv("SOC_CODIGO_RESPONSAVEL") or "104404").strip()
-CODIGO_USUARIO           = (os.getenv("SOC_CODIGO_USUARIO") or "3604573").strip()
+CODIGO_EMPRESA_PRINCIPAL = (os.getenv("SOC_CODIGO_EMPRESA_PRINCIPAL") or SOC_EMPRESA_PRINCIPAL or "").strip()
+CODIGO_RESPONSAVEL       = (os.getenv("SOC_CODIGO_RESPONSAVEL") or "").strip()
+CODIGO_USUARIO           = (os.getenv("SOC_CODIGO_USUARIO") or "").strip()
 
 # Códigos de exportação
 CODIGO_EXPORTA_EMPRESAS = "192392"

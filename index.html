@@ -809,9 +809,10 @@ input,textarea{font-family:inherit}
 
 <script>
 // ─────────────────── CONFIG ───────────────────
+// Deixe url e key vazios aqui. Configure via modal de Configurações (ícone ⚙️).
 const DEFAULTS = {
-  url: 'https://sjtjldxvjjjadtckhfkp.supabase.co',
-  key: 'sb_publishable_-vaRWsiPcyfxv1ap0ZuFZw_77votd9W',
+  url: '',
+  key: '',
 };
 const TZ = 'America/Sao_Paulo';
 
@@ -1029,7 +1030,7 @@ function refreshAtual() {
 async function carregarEmpresasMap() {
   if (!sb) return;
   try {
-    const { data, error } = await sb.from('empresas').select('codigo,nome,cnpj,telefone');
+    const { data, error } = await sb.from('empresas').select('codigo,nome,cnpj,telefone').range(0, 9999);
     if (error) throw error;
     empresasMap = new Map();
     for (const e of (data || [])) {
@@ -1044,7 +1045,7 @@ async function carregarEmpresasPainel() {
   const tbody = document.getElementById('emp-tbody');
   if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--ink-400);padding:32px">Carregando…</td></tr>`;
   try {
-    const { data, error } = await sb.from('empresas').select('*').order('nome');
+    const { data, error } = await sb.from('empresas').select('*').order('nome').range(0, 9999);
     if (error) throw error;
     todasEmpresas = data || [];
     renderEmpresas();

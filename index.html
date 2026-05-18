@@ -883,11 +883,19 @@ window.onload = async () => {
 
   atualizarHoraHeader();
 
+  // Se não há URL/chave configuradas, abre o modal de config antes de tudo
+  if (!cfg.url || !cfg.key) {
+    mostrarLogin();
+    abrirConfig();
+    return;
+  }
+
   // Cria o cliente Supabase e verifica se já há sessão ativa
   try {
     sb = supabase.createClient(cfg.url, cfg.key);
   } catch(e) {
     mostrarLogin();
+    abrirConfig();
     return;
   }
 
@@ -954,6 +962,13 @@ async function fazerLogin(event) {
   errEl.classList.remove('show');
 
   try {
+    if (!sb) {
+      if (!cfg.url || !cfg.key) {
+        abrirConfig();
+        throw new Error('Configure a URL e a chave do Supabase antes de entrar.');
+      }
+      sb = supabase.createClient(cfg.url, cfg.key);
+    }
     const { data, error } = await sb.auth.signInWithPassword({ email, password: senha });
     if (error) throw error;
     mostrarApp(data.user);

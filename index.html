@@ -899,7 +899,9 @@ window.onload = async () => {
   if (listEl) {
     listEl.addEventListener('click', e => {
       const btn = e.target.closest('.conv-item');
-      if (btn && btn.dataset.chave) abrirConversa(btn.dataset.chave);
+      if (!btn) return;
+      if (btn.dataset.chave)   abrirConversa(btn.dataset.chave);
+      if (btn.dataset.empresa) abrirConversaEmpresa(btn.dataset.empresa);
     });
   }
 
@@ -942,7 +944,10 @@ function inicializar() {
   pollInterval = setInterval(() => {
     if (viewAtual === 'conversas') {
       carregarConversas(true);
-      if (convAtiva) carregarMensagens(convAtiva, true);
+      if (convAtiva) {
+        if (convAtiva._empresaCodigo) carregarMensagensEmpresa(convAtiva._empresaCodigo, true);
+        else carregarMensagens(convAtiva, true);
+      }
     }
   }, 8000);
 }
@@ -1237,7 +1242,7 @@ async function carregarConversas(silencioso = false) {
 
   try {
     const { data, error } = await sb.from('mensagens')
-      .select('*').order('created_at', { ascending: false }).limit(500);
+      .select('*').order('created_at', { ascending: false }).limit(10000);
     if (error) throw error;
 
     const mapa = new Map();
@@ -1266,10 +1271,14 @@ function filtrarAba(aba) {
   abaFiltro = aba;
   ['todos','inbound','empresas'].forEach(a =>
     document.getElementById('stab-'+a).classList.toggle('active', a === aba));
-  aplicarFiltros();
+  if (aba === 'empresas') renderEmpresasChatList();
+  else aplicarFiltros();
 }
 
-function filtrarConversas() { aplicarFiltros(); }
+function filtrarConversas() {
+  if (abaFiltro === 'empresas') renderEmpresasChatList();
+  else aplicarFiltros();
+}
 
 function aplicarFiltros() {
   const q = (document.getElementById('search').value || '').toLowerCase();
@@ -1364,7 +1373,7 @@ async function carregarMensagens(conv, silencioso = false) {
   try {
     const { data, error } = await sb.from('mensagens')
       .select('*').eq('numero_whatsapp', conv.numero)
-      .order('created_at', { ascending: true }).limit(200);
+      .order('created_at', { ascending: true }).limit(2000);
     if (error) throw error;
     if (data) {
       conv.msgs = data;
@@ -1430,6 +1439,86 @@ function renderBolha(m) {
     </div>`;
 }
 
+// ─────────────────── EMPRESAS CHAT LIST ───────────────────
+function renderEmpresasChatList() {
+  const el = document.getElementById('conv-list');
+  const q  = (document.getElementById('search').value || '').toLowerCase().trim();
+
+  let lista = [...empresasMap.values()].sort((a, b) =>
+    (a.nome || '').localeCompare(b.nome || '', 'pt-BR'));
+
+  if (q) lista = lista.filter(e =>
+    (e.nome   || '').toLowerCase().includes(q) ||
+    (e.codigo || '').toLowerCase().includes(q) ||
+    (e.cnpj   || '').toLowerCase().includes(q));
+
+  if (!lista.length) {
+    el.innerHTML = `<div class="list-empty">Nenhuma empresa encontrada.</div>`;
+    return;
+  }
+
+  el.innerHTML = lista.map(e => {
+    const conv   = todasConversas.find(c => c.codigo === e.codigo);
+    const preview = conv ? previewMsg(conv.ultima_msg) : 'Nenhuma mensagem ainda';
+    const tempo   = conv ? fmtTempo(conv.ultima_msg.created_at) : '';
+    const ativa   = convAtiva && convAtiva._empresaCodigo === e.codigo ? 'active' : '';
+    const youPfx  = conv && conv.ultima_msg.direcao === 'outbound'
+      ? `<span class="you">Você: </span>` : '';
+    return `
+      <button class="conv-item ${ativa}" data-empresa="${esc(e.codigo)}">
+        <div class="avatar">${esc(initials(e.nome || e.codigo))}</div>
+        <div class="conv-info">
+          <div class="conv-row1">
+            <div class="conv-name">${esc(e.nome || e.codigo)}</div>
+            <div class="conv-time">${tempo}</div>
+          </div>
+          <div class="conv-num">${esc(e.telefone || e.codigo)}</div>
+          <div class="conv-preview">${youPfx}${esc(preview)}</div>
+        </div>
+      </button>
+      <div class="divider"></div>`;
+  }).join('');
+}
+
+function abrirConversaEmpresa(codigo) {
+  const emp = empresasMap.get(String(codigo));
+  if (!emp) return;
+  convAtiva = {
+    chave:          `__empresa__${codigo}`,
+    _empresaCodigo: codigo,
+    numero:         emp.telefone || '',
+    codigo:         codigo,
+    nome:           emp.nome || codigo,
+    temEmpresa:     true,
+    msgs:           [],
+    nao_lidas:      0,
+    ultima_msg:     { created_at: new Date().toISOString(), direcao: 'outbound', conteudo: '' },
+  };
+  if (abaFiltro === 'empresas') renderEmpresasChatList();
+  renderChat(convAtiva);
+  carregarMensagensEmpresa(codigo);
+}
+
+async function carregarMensagensEmpresa(codigo, silencioso = false) {
+  if (!sb) return;
+  try {
+    const { data, error } = await sb.from('mensagens')
+      .select('*').eq('codigo_empresa', codigo)
+      .order('created_at', { ascending: true }).limit(2000);
+    if (error) throw error;
+    if (data) {
+      if (convAtiva && convAtiva._empresaCodigo === codigo) convAtiva.msgs = data;
+      const container = document.getElementById('msgs-container');
+      if (container) renderMensagens(data, container, silencioso);
+    }
+  } catch(e) {
+    console.error(e);
+    const container = document.getElementById('msgs-container');
+    if (container && !silencioso)
+      container.innerHTML = `<div class="msg-error">Erro ao carregar: ${esc(e.message || e)}</div>`;
+  }
+}
+
 // ─────────────────── ENVIAR ───────────────────
 async function enviarMensagem() {
   if (!convAtiva) return;
@@ -1442,6 +1531,7 @@ async function enviarMensagem() {
   autoResize(input);
   try {
     const numero = convAtiva.numero;
+    if (!numero) { toast('Esta empresa não tem telefone cadastrado para envio.', 'err'); btn.disabled = false; return; }
     const resp   = await fetch('/.netlify/functions/enviar-mensagem', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ numero, texto }),
@@ -1478,7 +1568,7 @@ async function carregarDashboard() {
     const { data, error } = await sb.from('asos_enviados')
       .select('chave_aso,codigo_empresa,nome_empresa,data_emissao,data_envio,enviado,assinado,numero_destino,created_at')
       .order('created_at', { ascending: false })
-      .limit(2000);
+      .limit(10000);
     if (error) throw error;
     dashData = data || [];
     renderDashboard();
@@ -1707,7 +1797,7 @@ async function carregarASOs() {
     const { data, error } = await sb.from('asos_enviados')
       .select('*')
       .order('created_at', { ascending: false })
-      .limit(1000);
+      .limit(10000);
     if (error) throw error;
     todosASOs = data || [];
     aplicarFiltrosASO();

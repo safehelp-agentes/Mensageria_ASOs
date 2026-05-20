@@ -3,15 +3,27 @@ import requests
 
 from src.utils.helpers import _requisicao_com_retry
 
-SUPABASE_URL        = os.getenv("SUPABASE_URL", "").strip()
-SUPABASE_SECRET_KEY = os.getenv("SUPABASE_SECRET_KEY", "").strip()
-SUPABASE_ATIVO      = bool(SUPABASE_URL and SUPABASE_SECRET_KEY)
+SUPABASE_URL         = os.getenv("SUPABASE_URL", "").strip()
+SUPABASE_SECRET_KEY  = os.getenv("SUPABASE_SECRET_KEY", "").strip()   # anon/publishable — usado no front
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "").strip()  # service_role — bypassa RLS
+SUPABASE_ATIVO       = bool(SUPABASE_URL and SUPABASE_SECRET_KEY)
 
 
-def _headers():
+def _headers_read():
+    """Leituras: usa a chave anon (respeita RLS de SELECT)."""
     return {
         "apikey":        SUPABASE_SECRET_KEY,
         "Authorization": f"Bearer {SUPABASE_SECRET_KEY}",
+        "Content-Type":  "application/json",
+    }
+
+
+def _headers_write():
+    """Escritas: usa service_role para bypassar RLS de INSERT/UPDATE."""
+    key = SUPABASE_SERVICE_KEY or SUPABASE_SECRET_KEY
+    return {
+        "apikey":        key,
+        "Authorization": f"Bearer {key}",
         "Content-Type":  "application/json",
     }
 
@@ -33,6 +45,32 @@ def _data_para_iso(data_str: str) -> str | None:
         return None
 
 
+# ── Health check ─────────────────────────────────────────
+
+def verificar_conectividade() -> tuple[bool, str]:
+    """
+    Testa se o Supabase está acessível e a chave de serviço é válida.
+    Retorna (ok: bool, mensagem: str).
+    """
+    if not SUPABASE_ATIVO:
+        return False, "SUPABASE_URL ou SUPABASE_SECRET_KEY não configurados no .env"
+    if not SUPABASE_SERVICE_KEY:
+        return False, "SUPABASE_SERVICE_KEY não configurada no .env"
+    try:
+        resp = _requisicao_com_retry(
+            requests.get,
+            _url("empresas"),
+            headers=_headers_write(),
+            params={"select": "codigo", "limit": "1"},
+            timeout=10,
+        )
+        if resp.status_code < 300:
+            return True, "OK"
+        return False, f"HTTP {resp.status_code}: {resp.text[:200]}"
+    except Exception as e:
+        return False, str(e)
+
+
 # ── Empresas ──────────────────────────────────────────────
 
 def upsert_empresa(codigo: str, nome: str, cnpj: str = "", telefone: str = ""):
@@ -42,7 +80,7 @@ def upsert_empresa(codigo: str, nome: str, cnpj: str = "", telefone: str = ""):
         resp = _requisicao_com_retry(
             requests.post,
             _url("empresas"),
-            headers={**_headers(), "Prefer": "resolution=merge-duplicates,return=minimal"},
+            headers={**_headers_write(), "Prefer": "resolution=merge-duplicates,return=minimal"},
             params={"on_conflict": "codigo"},
             json={"codigo": codigo, "nome": nome, "cnpj": cnpj, "telefone": telefone},
             timeout=10,
@@ -64,10 +102,9 @@ def sincronizar_empresas_soc(empresas: list) -> None:
         if not codigo:
             continue
         registros.append({
-            "codigo":   codigo,
-            "nome":     (emp.get("RAZAOSOCIAL") or emp.get("NOMEABREVIADO") or "").strip(),
-            "cnpj":     str(emp.get("CNPJ", "")).strip(),
-            "telefone": "",
+            "codigo": codigo,
+            "nome":   (emp.get("RAZAOSOCIAL") or emp.get("NOMEABREVIADO") or "").strip(),
+            "cnpj":   str(emp.get("CNPJ", "")).strip(),
         })
 
     if not registros:
@@ -77,7 +114,7 @@ def sincronizar_empresas_soc(empresas: list) -> None:
         resp = _requisicao_com_retry(
             requests.post,
             _url("empresas"),
-            headers={**_headers(), "Prefer": "resolution=ignore-duplicates,return=minimal"},
+            headers={**_headers_write(), "Prefer": "resolution=merge-duplicates,return=minimal"},
             params={"on_conflict": "codigo"},
             json=registros,
             timeout=30,
@@ -100,7 +137,7 @@ def buscar_chaves_enviadas() -> set:
         resp = _requisicao_com_retry(
             requests.get,
             _url("asos_enviados"),
-            headers=_headers(),
+            headers=_headers_write(),
             params={"enviado": "eq.true", "select": "chave_aso"},
             timeout=15,
         )
@@ -129,7 +166,7 @@ def marcar_aso_enviado(
         resp = _requisicao_com_retry(
             requests.post,
             _url("asos_enviados"),
-            headers={**_headers(), "Prefer": "resolution=merge-duplicates,return=minimal"},
+            headers={**_headers_write(), "Prefer": "resolution=merge-duplicates,return=minimal"},
             params={"on_conflict": "chave_aso"},
             json={
                 "chave_aso":      chave,
@@ -165,7 +202,7 @@ def salvar_aso_pendente(
         resp = _requisicao_com_retry(
             requests.post,
             _url("asos_enviados"),
-            headers={**_headers(), "Prefer": "resolution=merge-duplicates,return=minimal"},
+            headers={**_headers_write(), "Prefer": "resolution=merge-duplicates,return=minimal"},
             params={"on_conflict": "chave_aso"},
             json={
                 "chave_aso":      chave,
@@ -193,7 +230,7 @@ def buscar_asos_pendentes() -> list:
         resp = _requisicao_com_retry(
             requests.get,
             _url("asos_enviados"),
-            headers=_headers(),
+            headers=_headers_write(),
             params={
                 "enviado": "eq.false",
                 "select":  "chave_aso,codigo_empresa,nome_empresa,data_emissao,numero_destino,status",
@@ -218,7 +255,7 @@ def buscar_config_empresas() -> dict:
         resp = _requisicao_com_retry(
             requests.get,
             _url("empresas"),
-            headers=_headers(),
+            headers=_headers_write(),
             params={"select": "codigo,bloqueada,telefone_escolhido"},
             timeout=15,
         )
@@ -253,7 +290,7 @@ def registrar_mensagem_outbound(
         resp = _requisicao_com_retry(
             requests.post,
             _url("mensagens"),
-            headers={**_headers(), "Prefer": "return=minimal"},
+            headers={**_headers_write(), "Prefer": "return=minimal"},
             json={
                 "codigo_empresa":  codigo_empresa,
                 "nome_empresa":    nome_empresa,
@@ -288,7 +325,7 @@ def registrar_mensagem_inbound(
         resp = _requisicao_com_retry(
             requests.post,
             _url("mensagens"),
-            headers={**_headers(), "Prefer": "return=minimal"},
+            headers={**_headers_write(), "Prefer": "return=minimal"},
             json={
                 "codigo_empresa":  codigo_empresa,
                 "nome_empresa":    nome_empresa,

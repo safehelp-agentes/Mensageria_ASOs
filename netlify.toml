@@ -6,4 +6,4 @@
   # SUPABASE_URL e SUPABASE_KEY são chaves públicas (anon/publishable) do Supabase,
   # protegidas por RLS — não são segredos reais. Netlify as trata como segredo
   # porque são env vars, então dizemos explicitamente para ignorá-las no scan.
-  SECRETS_SCAN_OMIT_KEYS = "SUPABASE_URL,SUPABASE_KEY"
+  SECRETS_SCAN_OMIT_KEYS = "SUPABASE_URL,SUPABASE_SECRET_KEY,SUPABASE_KEY"

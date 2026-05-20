@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import shutil
 import argparse
@@ -34,6 +35,7 @@ from src.integrations.supabase import (
     salvar_aso_pendente,
     buscar_asos_pendentes,
     buscar_config_empresas,
+    verificar_conectividade,
 )
 
 
@@ -69,13 +71,18 @@ def _processar_grupo_empresas(grupos: dict, data_referencia: str, config_empresa
 
         cfg_emp             = config_empresas.get(codigo_empresa, {})
         telefone_escolhido  = cfg_emp.get("telefone_escolhido", "") or ""
-        if telefone_escolhido and numero_parece_valido(telefone_escolhido):
-            numero_empresa = normalizar_numero_whatsapp(telefone_escolhido)
-            print(f"  Usando telefone escolhido (CRM): {numero_empresa}")
+        if telefone_escolhido:
+            if numero_parece_valido(telefone_escolhido):
+                numero_empresa = normalizar_numero_whatsapp(telefone_escolhido)
+                print(f"  Usando telefone escolhido (CRM): {numero_empresa}")
+            else:
+                registrar_erro(f"Empresa {codigo_empresa}: telefone_escolhido '{telefone_escolhido}' inválido — forçando número de teste")
+                print(f"  AVISO: telefone escolhido inválido ({telefone_escolhido}) → número de teste")
+                numero_empresa = ""
 
         numero_destino    = resolver_destino_envio(numero_empresa)
 
-        if not numero_empresa:
+        if not numero_empresa and not telefone_escolhido:
             registrar_erro(f"Empresa {codigo_empresa} sem telefone válido")
 
         resultado.update({
@@ -170,6 +177,28 @@ def _processar_grupo_empresas(grupos: dict, data_referencia: str, config_empresa
 
 
 def main(usar_ontem: bool = False, data_especifica: str | None = None):
+    # ── Verifica conectividade com o Supabase antes de qualquer operação ───────
+    print("Verificando conexão com Supabase...")
+    supabase_ok, supabase_msg = verificar_conectividade()
+    if not supabase_ok:
+        msg_erro = (
+            f"⚠️ Automação ASOs — SafeWork\n"
+            f"ERRO DE EXECUÇÃO: Não foi possível conectar ao Supabase.\n"
+            f"Detalhe: {supabase_msg}\n"
+            f"O script foi encerrado. Verifique a conexão e as credenciais."
+        )
+        print(f"\n[SUPABASE] Falha na verificação de conectividade: {supabase_msg}")
+        print("Enviando alerta para o número de teste e encerrando...")
+        try:
+            from src.meta.whatsapp import enviar_texto_meta
+            enviar_texto_meta(META_NUMERO_TESTE, msg_erro)
+            print("[META] Alerta enviado com sucesso.")
+        except Exception as e:
+            print(f"[META] Não foi possível enviar o alerta: {e}")
+        sys.exit(1)
+
+    print("[SUPABASE] Conexão OK.\n")
+
     # ── Prepara diretórios ─────────────────────────────────────────────────────
     if os.path.exists(PASTA_TEMP):
         shutil.rmtree(PASTA_TEMP)

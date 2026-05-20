@@ -19,3 +19,5 @@ teste.txt
 # IDE / ferramentas locais
 .idea/
 .claude/settings.local.json
+.claude
+teste/

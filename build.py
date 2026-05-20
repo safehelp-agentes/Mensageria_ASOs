@@ -1,10 +1,11 @@
 import os
 
 url = os.environ.get("SUPABASE_URL", "")
-key = os.environ.get("SUPABASE_KEY", "")
+# Aceita SUPABASE_SECRET_KEY (nome usado no .env e no Netlify) ou SUPABASE_KEY
+key = os.environ.get("SUPABASE_SECRET_KEY", "") or os.environ.get("SUPABASE_KEY", "")
 
 if not url or not key:
-    print("AVISO: SUPABASE_URL ou SUPABASE_KEY nao definidos — placeholders mantidos.")
+    print("AVISO: SUPABASE_URL ou SUPABASE_SECRET_KEY nao definidos — placeholders mantidos.")
 
 with open("index.html", "r", encoding="utf-8") as f:
     html = f.read()

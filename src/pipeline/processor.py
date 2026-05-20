@@ -10,14 +10,35 @@ from config import (
     DELAY_ENTRE_REQUISICOES, DELAY_ENTRE_DOWNLOADS,
 )
 from src.utils.helpers import sanitizar_nome, registrar_erro
-from src.soc.api import buscar_empresas, buscar_asos_empresa
+from src.soc.api import buscar_empresas, buscar_asos_empresa, buscar_contatos_empresa, extrair_primeiro_numero_contato
 from src.soc.downloader import baixar_documento
-from src.integrations.supabase import sincronizar_empresas_soc
+from src.integrations.supabase import sincronizar_empresas_soc, upsert_empresa
 
 
 def _montar_nome_arquivo_saida(nome_base: str, tipo: str) -> str:
     nome_base = sanitizar_nome(os.path.splitext(nome_base)[0])
     return f"{nome_base}.{tipo}" if tipo in ("pdf", "zip") else f"{nome_base}.bin"
+
+
+def _atualizar_telefone_bloqueadas(empresas: list, bloqueadas: set) -> None:
+    """Atualiza telefone no Supabase para empresas bloqueadas (nunca processadas no fluxo normal)."""
+    if not bloqueadas:
+        return
+    for emp in empresas:
+        codigo = str(emp.get("CODIGO", "")).strip()
+        if codigo not in bloqueadas:
+            continue
+        try:
+            contatos = buscar_contatos_empresa(codigo)
+            numero   = extrair_primeiro_numero_contato(contatos)["numero"]
+            upsert_empresa(
+                codigo   = codigo,
+                nome     = (emp.get("RAZAOSOCIAL") or emp.get("NOMEABREVIADO") or "").strip(),
+                cnpj     = str(emp.get("CNPJ", "")).strip(),
+                telefone = numero,
+            )
+        except Exception as e:
+            registrar_erro(f"Erro ao atualizar telefone empresa bloqueada {codigo}: {e}")
 
 
 def coletar_asos_por_data(data_inicio: str, data_fim: str, empresas_bloqueadas: set = None) -> list:
@@ -28,6 +49,7 @@ def coletar_asos_por_data(data_inicio: str, data_fim: str, empresas_bloqueadas: 
 
     empresas = buscar_empresas()
     sincronizar_empresas_soc(empresas)
+    _atualizar_telefone_bloqueadas(empresas, empresas_bloqueadas)
 
     empresas_ativas = [
         emp for emp in empresas

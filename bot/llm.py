@@ -47,8 +47,8 @@ Seu papel é atender via WhatsApp clientes que precisam de ASOs (Atestados de Sa
 - Situação não resolvida após 2 tentativas
 - Cliente pede atendimento humano
 - Erro técnico persistente
-- Ao escalar, SEMPRE envie esta mensagem exata ao cliente:
-  "Vou transferir seu atendimento para nossa equipe. Entre em contato com a SafeWork pelo número (43) 9182-1898.""""
+- Ao escalar, SEMPRE envie esta mensagem ao cliente:
+  Vou transferir seu atendimento para nossa equipe. Entre em contato com a SafeWork pelo número (43) 9182-1898."""
 
 _TOOLS = [
     {

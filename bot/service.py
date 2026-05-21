@@ -24,10 +24,16 @@ _BOT_NUMEROS_TESTE: set[str] = {
 }
 
 
+def _normalizar(numero: str) -> str:
+    import re
+    return re.sub(r"\D", "", numero or "")
+
+
 def _numero_permitido(numero: str) -> bool:
     if not _BOT_NUMEROS_TESTE:
         return True
-    return numero.strip() in _BOT_NUMEROS_TESTE
+    numero_norm = _normalizar(numero)
+    return any(numero_norm == _normalizar(n) for n in _BOT_NUMEROS_TESTE)
 
 
 class MensagemEntrada(BaseModel):

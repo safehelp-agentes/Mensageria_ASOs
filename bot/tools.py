@@ -27,7 +27,11 @@ def _normalizar_nome(nome: str) -> str:
 def _nomes_batem(busca: str, funcionario: str) -> bool:
     b = _normalizar_nome(busca)
     f = _normalizar_nome(funcionario)
-    return all(p in f for p in b.split() if len(p) > 2)
+    palavras = [p for p in b.split() if len(p) > 2]
+    if not palavras:
+        return False
+    # Basta qualquer palavra da busca aparecer no nome do funcionário
+    return any(p in f for p in palavras)
 
 
 def _campo(aso: dict, *chaves) -> str:
@@ -116,18 +120,27 @@ def buscar_asos_por_funcionario(
     except Exception as e:
         return {"erro": str(e), "candidatos": []}
 
+    if asos:
+        print(f"[BOT] Campos do SOC (primeiro ASO): {list(asos[0].keys())}")
+
     candidatos = []
     for aso in asos:
         nome_func = _campo(aso, "NOME", "NOME_FUNCIONARIO", "NOMEFUNCIONARIO")
         if not nome_func or not _nomes_batem(nome_funcionario, nome_func):
             continue
 
+        data = _campo(
+            aso,
+            "DATA_EMISSAO", "DATAEMISSAO", "DT_EMISSAO", "DTEMIISSAO",
+            "DATA_EMISSAO_ASO", "DATAEMISSAOASO", "DATA", "EMISSAO",
+        )
+
         candidatos.append({
             "cd_empresa":       _campo(aso, "CD_EMPRESA") or codigo_empresa,
             "cd_ged":           _campo(aso, "CD_GED"),
             "cd_arquivo":       _campo(aso, "CD_ARQUIVO_GED"),
             "nome_funcionario": nome_func,
-            "data_emissao":     _campo(aso, "DATA_EMISSAO", "DATAEMISSAO"),
+            "data_emissao":     data,
             "nome_arquivo":     _campo(aso, "NOME_ARQUIVO", "NOMEARQUIVO"),
         })
 

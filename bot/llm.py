@@ -30,15 +30,24 @@ IMPORTANTE: Siga esta ordem sempre, sem pular etapas.
      2. [Nome completo] — [Cargo]"
 
    - Se retornar 0: responda exatamente: "Não encontrei esse colaborador registrado na empresa. Poderia tentar escrever o nome de outra forma ou confirmar se esse funcionário está realmente cadastrado?"
-5. Após o cliente confirmar o funcionário, use `buscar_asos_por_funcionario` com o nome EXATO retornado pela busca
-6. Se houver múltiplos ASOs, apresente lista numerada usando SEMPRE o campo data_emissao:
+5. Após o cliente confirmar o funcionário, use `buscar_asos_por_funcionario` com:
+   - `nome_funcionario`: nome EXATO retornado por `buscar_funcionarios`
+   - `codigo_funcionario`: campo `codigo` do funcionário selecionado (SEMPRE passe este campo — ele evita misturar ASOs de pessoas com o mesmo nome)
+6. Após `buscar_asos_por_funcionario` retornar candidatos:
+   - Se retornar 0 candidatos: diga "Não encontrei nenhum ASO para esse funcionário no último ano."
+   - Se retornar 1 candidato: confirme com o cliente e envie diretamente:
+     "Encontrei 1 ASO para [nome_funcionario] — [data_emissao ou 'data não disponível']. Posso enviar agora?"
+     Aguarde confirmação e então use `baixar_e_enviar_aso`.
+   - Se retornar 2 ou mais: apresente lista numerada:
+     "Encontrei X ASOs para [nome_funcionario]. Qual você precisa?
+     1. [nome_funcionario] — [data_emissao ou 'data não disponível']
+     2. [nome_funcionario] — [data_emissao ou 'data não disponível']"
 
-   "Encontrei X ASOs para [nome]. Qual você precisa?
-
-   1. [Nome completo] — [data_emissao]
-   2. [Nome completo] — [data_emissao]"
-
-   NUNCA mostre cd_arquivo, cd_ged ou cd_empresa ao cliente. Se data_emissao estiver vazio, mostre "data não disponível".
+   REGRAS OBRIGATÓRIAS ao exibir candidatos:
+   - NUNCA mostre cd_arquivo, cd_ged ou cd_empresa ao cliente
+   - SEMPRE mostre o campo nome_funcionario — nunca escreva "sem dados" ou "nenhum dado"
+   - Se data_emissao estiver vazio, escreva "data não disponível"
+   - Se encontrou candidatos, JAMAIS diga que não encontrou o funcionário
 
 7. Após o cliente confirmar o ASO, use `baixar_e_enviar_aso`
 
@@ -98,15 +107,20 @@ _TOOLS = [
             "description": (
                 "Busca ASOs de um funcionário no SOC pelo nome exato. "
                 "Use após confirmar qual funcionário o cliente quer. "
-                "Retorna lista de candidatos com cd_empresa, cd_ged, cd_arquivo e data_emissao."
+                "Retorna lista de candidatos com cd_empresa, cd_ged, cd_arquivo e data_emissao. "
+                "Sempre passe codigo_funcionario quando disponível para evitar confusão entre homônimos."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "numero_whatsapp":  {"type": "string"},
-                    "codigo_empresa":   {"type": "string"},
-                    "nome_funcionario": {"type": "string"},
-                    "janela_dias":      {"type": "integer", "default": 365},
+                    "numero_whatsapp":    {"type": "string"},
+                    "codigo_empresa":     {"type": "string"},
+                    "nome_funcionario":   {"type": "string"},
+                    "codigo_funcionario": {
+                        "type": "string",
+                        "description": "Código do funcionário retornado por buscar_funcionarios. OBRIGATÓRIO quando há múltiplos funcionários com o mesmo nome.",
+                    },
+                    "janela_dias":        {"type": "integer", "default": 365},
                 },
                 "required": ["numero_whatsapp", "codigo_empresa", "nome_funcionario"],
             },

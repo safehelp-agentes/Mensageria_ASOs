@@ -5,6 +5,8 @@ import json
 from bot import llm, tools, state
 from src.meta.whatsapp import enviar_texto_meta
 
+_RE_FUNC_CALL = re.compile(r'<function=(\w+)>([\s\S]*?)</function>', re.DOTALL)
+
 _NUMEROS_TESTE: set[str] = {
     n.strip() for n in os.getenv("BOT_NUMEROS_TESTE", "").split(",") if n.strip()
 }
@@ -45,6 +47,17 @@ def _normalizar_historico(msgs: list) -> list:
     return normalizado
 
 
+def _extrair_inline_tools(content: str) -> list[tuple[str, dict]]:
+    """Detecta chamadas <function=nome>{...}</function> geradas como texto pelo Llama."""
+    resultado = []
+    for nome, args_raw in _RE_FUNC_CALL.findall(content):
+        try:
+            resultado.append((nome, json.loads(args_raw.strip())))
+        except json.JSONDecodeError:
+            pass
+    return resultado
+
+
 def _executar_tool(nome: str, inputs: dict, numero: str) -> str:
     try:
         if nome == "buscar_funcionarios":
@@ -60,6 +73,7 @@ def _executar_tool(nome: str, inputs: dict, numero: str) -> str:
                 codigo_empresa=inputs["codigo_empresa"],
                 nome_funcionario=inputs["nome_funcionario"],
                 janela_dias=inputs.get("janela_dias", 365),
+                codigo_funcionario=inputs.get("codigo_funcionario", ""),
             )
         elif nome == "baixar_e_enviar_aso":
             resultado = tools.baixar_e_enviar_aso(
@@ -119,11 +133,28 @@ def processar_mensagem(numero: str, mensagem: str, wamid: str = "", timestamp: i
     # Loop de tool use (máx 5 iterações)
     resposta_final = None
     for _ in range(5):
-        resposta = llm.chamar_llm(messages, contexto)
+        try:
+            resposta = llm.chamar_llm(messages, contexto)
+        except Exception as e:
+            print(f"[BOT] Erro na chamada ao LLM: {e}")
+            resposta_final = "Desculpe, ocorreu um erro interno. Entre em contato com a SafeWork pelo número (43) 9182-1898."
+            break
         choice   = resposta.choices[0]
 
         if choice.finish_reason == "stop":
-            resposta_final = choice.message.content
+            content = choice.message.content or ""
+            inline_tools = _extrair_inline_tools(content)
+            if inline_tools:
+                # Llama gerou tool calls como texto — executa e injeta resultado
+                messages.append({"role": "assistant", "content": content})
+                resultados = []
+                for nome_tool, inputs_tool in inline_tools:
+                    print(f"[BOT] Tool (inline): {nome_tool}")
+                    res = _executar_tool(nome_tool, inputs_tool, numero)
+                    resultados.append(f"Resultado de {nome_tool}: {res}")
+                messages.append({"role": "user", "content": "\n".join(resultados)})
+                continue
+            resposta_final = content
             break
 
         if choice.finish_reason == "tool_calls":

@@ -48,8 +48,42 @@ def _interceptar_comando_teste(numero: str, mensagem: str) -> bool:
 
 # ── Fases ─────────────────────────────────────────────────────────────────────
 
-def _fase_nova_conversa(numero: str, cod_empresa: str):
+def _fase_nova_conversa(numero: str, mensagem: str, cod_empresa: str):
     _enviar(numero, _MSG_BOAS_VINDAS, cod_empresa)
+
+    intencao = llm.interpretar_mensagem_inicial(mensagem)
+    print(f"[BOT] Intenção inicial: {intencao}")
+
+    if intencao["quer_aso"] and intencao["nome"]:
+        # Fast path: já sabe que quer ASO e qual funcionário — pula menu e "qual nome?"
+        nome         = intencao["nome"]
+        resultado    = tools.buscar_funcionarios(codigo_empresa=cod_empresa, nome_parcial=nome)
+        funcionarios = resultado.get("funcionarios", [])
+
+        if funcionarios:
+            state.salvar_estado(
+                numero=numero,
+                fase="aguardando_funcionario",
+                codigo_empresa=cod_empresa,
+                candidatos=funcionarios,
+                nome_buscado=nome,
+            )
+            linhas = [f"Encontrei {len(funcionarios)} funcionário(s) com esse nome:\n"]
+            for i, f in enumerate(funcionarios, 1):
+                linhas.append(f"{i}. {f['nome']} — {f['cargo']} — {f['setor']}")
+            linhas.append("\n0. Voltar")
+            _enviar(numero, "\n".join(linhas), cod_empresa)
+            return
+
+        # Nome não encontrado — cai no fluxo normal abaixo
+
+    elif intencao["quer_aso"]:
+        # Sabe que quer ASO mas não mencionou nome — pula menu
+        _enviar(numero, "Qual o nome do funcionário que você deseja buscar?", cod_empresa)
+        state.salvar_estado(numero, fase="aguardando_nome_funcionario", codigo_empresa=cod_empresa)
+        return
+
+    # Sem intenção clara — mostra menu
     _enviar(numero, _MSG_MENU, cod_empresa)
     state.salvar_estado(numero, fase="menu_principal", codigo_empresa=cod_empresa)
 
@@ -228,7 +262,7 @@ def processar_mensagem(numero: str, mensagem: str, wamid: str = "", timestamp: i
     cod    = (estado or {}).get("codigo_empresa", "")
 
     if not estado or fase == "livre":
-        _fase_nova_conversa(numero, cod)
+        _fase_nova_conversa(numero, mensagem, cod)
         return
 
     if fase == "menu_principal":
@@ -257,4 +291,4 @@ def processar_mensagem(numero: str, mensagem: str, wamid: str = "", timestamp: i
         return
 
     # Fallback
-    _fase_nova_conversa(numero, cod)
+    _fase_nova_conversa(numero, mensagem, cod)

@@ -33,6 +33,31 @@ def _parse_json(texto: str) -> dict:
 
 # ── Funções de interpretação ───────────────────────────────────────────────────
 
+def interpretar_mensagem_inicial(mensagem: str) -> dict:
+    """
+    Analisa a primeira mensagem do usuário para detectar intenção e nome.
+    Retorna {"quer_aso": bool, "nome": str | None}
+    """
+    system = (
+        "Analise a mensagem de um cliente que acessa um sistema de ASOs (Atestados de Saúde Ocupacional).\n"
+        "Identifique:\n"
+        "1. Se o cliente quer buscar um ASO (quer_aso: true ou false)\n"
+        "2. Se ele mencionou o nome de um funcionário (nome: \"nome\" ou null)\n"
+        "Responda APENAS JSON. Exemplos:\n"
+        "  'bom dia, gostaria de ver asos do adilson' → {\"quer_aso\": true, \"nome\": \"adilson\"}\n"
+        "  'quero buscar um aso' → {\"quer_aso\": true, \"nome\": null}\n"
+        "  'oi tudo bem' → {\"quer_aso\": false, \"nome\": null}"
+    )
+    try:
+        data = _parse_json(_chamar(system, mensagem))
+        return {
+            "quer_aso": bool(data.get("quer_aso")),
+            "nome":     data.get("nome") or None,
+        }
+    except Exception:
+        return {"quer_aso": False, "nome": None}
+
+
 def interpretar_opcao_menu(mensagem: str) -> int | None:
     """Retorna 1 (buscar ASO), 0 (finalizar) ou None se não entendeu."""
     system = (

@@ -1,6 +1,5 @@
 import os
 import re
-import json
 
 from bot import llm, tools, state
 from src.meta.whatsapp import enviar_texto_meta
@@ -9,76 +8,248 @@ _NUMEROS_TESTE: set[str] = {
     n.strip() for n in os.getenv("BOT_NUMEROS_TESTE", "").split(",") if n.strip()
 }
 
+_MSG_BOAS_VINDAS = (
+    "Olá! Sou o robô responsável pela medicina na SafeWork. "
+    "Esse é um canal oficial, mas sem atendimento humano. "
+    "Caso necessite falar com uma pessoa, entre em contato pelo (43) 9182-1898."
+)
+
+_MSG_MENU = (
+    "O que você deseja?\n"
+    "1. Buscar ASO\n"
+    "0. Finalizar atendimento"
+)
+
+_RE_NUMERO = re.compile(r'^\s*(\d+)\s*$')
+
+
+def _enviar(numero: str, texto: str, cod_empresa: str = ""):
+    enviar_texto_meta(numero, texto)
+    state.registrar_mensagem_bot(numero, texto, cod_empresa)
+
+
+def _extrair_numero(mensagem: str) -> int | None:
+    m = _RE_NUMERO.match(mensagem.strip())
+    return int(m.group(1)) if m else None
+
 
 def _interceptar_comando_teste(numero: str, mensagem: str) -> bool:
-    """
-    Permite que números de teste definam a empresa manualmente.
-    Exemplo: enviar "empresa 1530555" associa aquele código ao número durante os testes.
-    Retorna True se a mensagem foi interceptada (não deve ser processada pelo LLM).
-    """
     if numero not in _NUMEROS_TESTE:
         return False
-
     match = re.match(r"^empresa\s+(\d+)\s*$", mensagem.strip(), re.IGNORECASE)
     if not match:
         return False
-
     codigo = match.group(1)
     state.salvar_estado(numero=numero, fase="livre", codigo_empresa=codigo)
-    enviar_texto_meta(numero, f"Modo teste ativo. Empresa definida como {codigo}. Pode perguntar sobre ASOs.")
+    _enviar(numero, f"Modo teste ativo. Empresa definida como {codigo}.")
     print(f"[BOT] Teste: empresa {codigo} definida para {numero}")
     return True
 
 
-def _normalizar_historico(msgs: list) -> list:
-    """Garante alternância user/assistant e que começa com user."""
-    normalizado = []
-    for msg in msgs:
-        if normalizado and normalizado[-1]["role"] == msg["role"]:
-            normalizado[-1]["content"] += f"\n{msg['content']}"
+# ── Fases ─────────────────────────────────────────────────────────────────────
+
+def _fase_nova_conversa(numero: str, mensagem: str, cod_empresa: str):
+    _enviar(numero, _MSG_BOAS_VINDAS, cod_empresa)
+
+    intencao = llm.interpretar_mensagem_inicial(mensagem)
+    print(f"[BOT] Intenção inicial: {intencao}")
+
+    if intencao["quer_aso"] and intencao["nome"]:
+        # Fast path: já sabe que quer ASO e qual funcionário — pula menu e "qual nome?"
+        nome         = intencao["nome"]
+        resultado    = tools.buscar_funcionarios(codigo_empresa=cod_empresa, nome_parcial=nome)
+        funcionarios = resultado.get("funcionarios", [])
+
+        if funcionarios:
+            state.salvar_estado(
+                numero=numero,
+                fase="aguardando_funcionario",
+                codigo_empresa=cod_empresa,
+                candidatos=funcionarios,
+                nome_buscado=nome,
+            )
+            linhas = [f"Encontrei {len(funcionarios)} funcionário(s) com esse nome:\n"]
+            for i, f in enumerate(funcionarios, 1):
+                linhas.append(f"{i}. {f['nome']} — {f['cargo']} — {f['setor']}")
+            linhas.append("\n0. Voltar")
+            _enviar(numero, "\n".join(linhas), cod_empresa)
+            return
+
+        # Nome não encontrado — cai no fluxo normal abaixo
+
+    elif intencao["quer_aso"]:
+        # Sabe que quer ASO mas não mencionou nome — pula menu
+        _enviar(numero, "Qual o nome do funcionário que você deseja buscar?", cod_empresa)
+        state.salvar_estado(numero, fase="aguardando_nome_funcionario", codigo_empresa=cod_empresa)
+        return
+
+    # Sem intenção clara — mostra menu
+    _enviar(numero, _MSG_MENU, cod_empresa)
+    state.salvar_estado(numero, fase="menu_principal", codigo_empresa=cod_empresa)
+
+
+def _fase_menu_principal(numero: str, mensagem: str, estado: dict):
+    cod = estado.get("codigo_empresa", "")
+
+    n = _extrair_numero(mensagem)
+    if n is None:
+        n = llm.interpretar_opcao_menu(mensagem)
+
+    if n == 1:
+        _enviar(numero, "Qual o nome do funcionário que você deseja buscar?", cod)
+        state.salvar_estado(numero, fase="aguardando_nome_funcionario", codigo_empresa=cod)
+        return
+
+    if n == 0:
+        _enviar(numero, "Atendimento finalizado. Até logo!", cod)
+        state.resetar_estado(numero)
+        return
+
+    _enviar(numero, f"Não entendi. Por favor, responda com:\n{_MSG_MENU}", cod)
+
+
+def _fase_aguardando_nome(numero: str, mensagem: str, estado: dict):
+    cod = estado.get("codigo_empresa", "")
+
+    nome = llm.interpretar_nome_funcionario(mensagem)
+    if not nome:
+        _enviar(numero, "Não identifiquei um nome. Por favor, informe o nome do funcionário:", cod)
+        return
+
+    print(f"[BOT] Nome extraído: {nome}")
+    resultado    = tools.buscar_funcionarios(codigo_empresa=cod, nome_parcial=nome)
+    funcionarios = resultado.get("funcionarios", [])
+
+    if not funcionarios:
+        _enviar(
+            numero,
+            f"Não encontrei nenhum funcionário com o nome \"{nome}\". Poderia verificar o nome?\n"
+            "0. Voltar ao menu",
+            cod,
+        )
+        return
+
+    state.salvar_estado(
+        numero=numero,
+        fase="aguardando_funcionario",
+        codigo_empresa=cod,
+        candidatos=funcionarios,
+        nome_buscado=nome,
+    )
+
+    linhas = [f"Encontrei {len(funcionarios)} funcionário(s) com esse nome:\n"]
+    for i, f in enumerate(funcionarios, 1):
+        linhas.append(f"{i}. {f['nome']} — {f['cargo']} — {f['setor']}")
+    linhas.append("\n0. Voltar")
+    _enviar(numero, "\n".join(linhas), cod)
+
+
+def _fase_aguardando_funcionario(numero: str, mensagem: str, estado: dict):
+    cod          = estado.get("codigo_empresa", "")
+    funcionarios = estado.get("candidatos", [])
+
+    n = _extrair_numero(mensagem)
+    if n is None:
+        nomes = [f"{f['nome']} — {f['cargo']}" for f in funcionarios]
+        idx   = llm.interpretar_selecao_lista(mensagem, len(funcionarios), nomes)
+        if idx == -1:
+            n = 0
+        elif idx is not None:
+            n = idx + 1  # volta para 1-based
+
+    if n == 0:
+        _enviar(numero, _MSG_MENU, cod)
+        state.salvar_estado(numero, fase="menu_principal", codigo_empresa=cod)
+        return
+
+    if n is None or n < 1 or n > len(funcionarios):
+        _enviar(numero, f"Por favor, escolha um número de 1 a {len(funcionarios)} ou 0 para voltar.", cod)
+        return
+
+    func = funcionarios[n - 1]
+    print(f"[BOT] Funcionário selecionado: {func['nome']} (cod={func.get('codigo')})")
+
+    resultado  = tools.buscar_asos_por_funcionario(
+        numero_whatsapp=numero,
+        codigo_empresa=cod,
+        nome_funcionario=func["nome"],
+        codigo_funcionario=func.get("codigo", ""),
+    )
+    candidatos = resultado.get("candidatos", [])
+
+    if not candidatos:
+        _enviar(numero, f"Não encontrei nenhum ASO para {func['nome']} no último ano.", cod)
+        _enviar(numero, _MSG_MENU, cod)
+        state.salvar_estado(numero, fase="menu_principal", codigo_empresa=cod)
+        return
+
+    linhas = [f"Qual ASO você deseja?\n"]
+    for i, aso in enumerate(candidatos, 1):
+        data = aso.get("data_emissao") or "data não disponível"
+        linhas.append(f"{i}. {aso['nome_funcionario']} — {data}")
+    linhas.append("\n0. Voltar")
+    _enviar(numero, "\n".join(linhas), cod)
+    # Estado com ASOs já salvo por buscar_asos_por_funcionario (fase=aguardando_confirmacao)
+
+
+def _fase_aguardando_aso(numero: str, mensagem: str, estado: dict):
+    cod        = estado.get("codigo_empresa", "")
+    candidatos = estado.get("candidatos", [])
+
+    n = _extrair_numero(mensagem)
+
+    if n is None:
+        # Aceita confirmações verbais quando há 1 candidato
+        if len(candidatos) == 1 and re.match(
+            r'^(sim|s|ok|pode|isso|esse|envia|manda|quero).*',
+            mensagem.strip(), re.IGNORECASE
+        ):
+            n = 1
         else:
-            normalizado.append({"role": msg["role"], "content": msg["content"]})
+            nomes = [
+                f"{a['nome_funcionario']} — {a.get('data_emissao') or 'data não disponível'}"
+                for a in candidatos
+            ]
+            idx = llm.interpretar_selecao_lista(mensagem, len(candidatos), nomes)
+            if idx == -1:
+                n = 0
+            elif idx is not None:
+                n = idx + 1
 
-    while normalizado and normalizado[0]["role"] != "user":
-        normalizado.pop(0)
+    if n == 0:
+        _enviar(numero, _MSG_MENU, cod)
+        state.salvar_estado(numero, fase="menu_principal", codigo_empresa=cod)
+        return
 
-    return normalizado
+    if n is None or n < 1 or n > len(candidatos):
+        _enviar(numero, f"Por favor, escolha um número de 1 a {len(candidatos)} ou 0 para voltar.", cod)
+        return
+
+    aso = candidatos[n - 1]
+    print(f"[BOT] ASO selecionado: {aso.get('nome_funcionario')} {aso.get('data_emissao')}")
+
+    resultado = tools.baixar_e_enviar_aso(
+        numero_whatsapp=numero,
+        cd_empresa=aso["cd_empresa"],
+        cd_ged=aso["cd_ged"],
+        cd_arquivo=aso["cd_arquivo"],
+        nome_funcionario=aso.get("nome_funcionario", ""),
+        data_emissao=aso.get("data_emissao", ""),
+    )
+
+    if not resultado.get("sucesso"):
+        _enviar(
+            numero,
+            f"Não consegui enviar o ASO: {resultado.get('erro', 'erro desconhecido')}. "
+            "Entre em contato com a SafeWork pelo número (43) 9182-1898.",
+            cod,
+        )
+
+    _enviar(numero, _MSG_MENU, cod)
+    state.salvar_estado(numero, fase="menu_principal", codigo_empresa=cod)
 
 
-def _executar_tool(nome: str, inputs: dict, numero: str) -> str:
-    try:
-        if nome == "buscar_funcionarios":
-            resultado = tools.buscar_funcionarios(
-                codigo_empresa=inputs["codigo_empresa"],
-                nome_parcial=inputs["nome_parcial"],
-            )
-        elif nome == "buscar_empresa_por_telefone":
-            resultado = tools.buscar_empresa(inputs["telefone"])
-        elif nome == "buscar_asos_por_funcionario":
-            resultado = tools.buscar_asos_por_funcionario(
-                numero_whatsapp=numero,
-                codigo_empresa=inputs["codigo_empresa"],
-                nome_funcionario=inputs["nome_funcionario"],
-                janela_dias=inputs.get("janela_dias", 365),
-            )
-        elif nome == "baixar_e_enviar_aso":
-            resultado = tools.baixar_e_enviar_aso(
-                numero_whatsapp=numero,
-                cd_empresa=inputs["cd_empresa"],
-                cd_ged=inputs["cd_ged"],
-                cd_arquivo=inputs["cd_arquivo"],
-                nome_funcionario=inputs.get("nome_funcionario", ""),
-                data_emissao=inputs.get("data_emissao", ""),
-            )
-        elif nome == "escalar_para_humano":
-            resultado = tools.escalar_para_humano(inputs["numero"], inputs["motivo"])
-        else:
-            resultado = {"erro": f"Tool desconhecida: {nome}"}
-    except Exception as e:
-        resultado = {"erro": str(e)}
-
-    return json.dumps(resultado, ensure_ascii=False)
-
+# ── Ponto de entrada ──────────────────────────────────────────────────────────
 
 def processar_mensagem(numero: str, mensagem: str, wamid: str = "", timestamp: int = None):
     print(f"[BOT] {numero}: {mensagem[:80]}")
@@ -86,88 +257,38 @@ def processar_mensagem(numero: str, mensagem: str, wamid: str = "", timestamp: i
     if _interceptar_comando_teste(numero, mensagem):
         return
 
-    estado    = state.buscar_estado(numero)
-    historico = state.buscar_historico(numero, limite=10)
+    estado = state.buscar_estado(numero)
+    fase   = (estado or {}).get("fase", "livre")
+    cod    = (estado or {}).get("codigo_empresa", "")
 
-    # Descarta mensagem atual se o n8n já a salvou no histórico antes de chamar o bot
-    if (historico
-            and historico[-1]["direcao"] == "inbound"
-            and historico[-1].get("conteudo") == mensagem):
-        historico = historico[:-1]
+    if not estado or fase == "livre":
+        _fase_nova_conversa(numero, mensagem, cod)
+        return
 
-    # Contexto injetado no system prompt
-    contexto = {}
-    if estado:
-        if estado.get("codigo_empresa"):
-            contexto["empresa_codigo"] = estado["codigo_empresa"]
-        if estado.get("fase") == "aguardando_confirmacao" and estado.get("candidatos"):
-            contexto["aguardando_confirmacao"] = True
-            contexto["candidatos_apresentados"] = estado["candidatos"]
-            contexto["nome_buscado"] = estado.get("nome_buscado")
+    if fase == "menu_principal":
+        _fase_menu_principal(numero, mensagem, estado)
+        return
 
-    # Monta histórico como lista de mensagens para o LLM
-    raw = []
-    for msg in historico:
-        role    = "user" if msg["direcao"] == "inbound" else "assistant"
-        conteudo = (msg.get("conteudo") or "").strip()
-        if conteudo:
-            raw.append({"role": role, "content": conteudo})
+    if fase == "aguardando_nome_funcionario":
+        _fase_aguardando_nome(numero, mensagem, estado)
+        return
 
-    messages = _normalizar_historico(raw)
-    messages.append({"role": "user", "content": mensagem})
+    if fase == "aguardando_funcionario":
+        _fase_aguardando_funcionario(numero, mensagem, estado)
+        return
 
-    # Loop de tool use (máx 5 iterações)
-    resposta_final = None
-    for _ in range(5):
-        resposta = llm.chamar_llm(messages, contexto)
-        choice   = resposta.choices[0]
+    if fase == "aguardando_confirmacao":
+        _fase_aguardando_aso(numero, mensagem, estado)
+        return
 
-        if choice.finish_reason == "stop":
-            resposta_final = choice.message.content
-            break
-
-        if choice.finish_reason == "tool_calls":
-            msg_assistente = choice.message
-
-            # Adiciona mensagem do assistente com os tool_calls
-            messages.append({
-                "role":       "assistant",
-                "content":    msg_assistente.content or "",
-                "tool_calls": [
-                    {
-                        "id":       tc.id,
-                        "type":     "function",
-                        "function": {
-                            "name":      tc.function.name,
-                            "arguments": tc.function.arguments,
-                        },
-                    }
-                    for tc in msg_assistente.tool_calls
-                ],
-            })
-
-            # Executa cada tool e adiciona os resultados
-            for tc in msg_assistente.tool_calls:
-                print(f"[BOT] Tool: {tc.function.name}")
-                inputs   = json.loads(tc.function.arguments)
-                resultado = _executar_tool(tc.function.name, inputs, numero)
-                messages.append({
-                    "role":         "tool",
-                    "tool_call_id": tc.id,
-                    "content":      resultado,
-                })
-        else:
-            break
-
-    if not resposta_final:
-        resposta_final = "Olá! Recebi sua mensagem. Em que posso ajudar?"
-
-    try:
-        enviar_texto_meta(numero, resposta_final)
-        state.registrar_mensagem_bot(
-            numero=numero,
-            conteudo=resposta_final,
-            codigo_empresa=(estado or {}).get("codigo_empresa", ""),
+    if fase == "escalado":
+        _enviar(
+            numero,
+            "Seu atendimento já foi transferido para nossa equipe. "
+            "Entre em contato pelo (43) 9182-1898.",
+            cod,
         )
-    except Exception as e:
-        print(f"[BOT] Erro ao enviar resposta: {e}")
+        return
+
+    # Fallback
+    _fase_nova_conversa(numero, mensagem, cod)

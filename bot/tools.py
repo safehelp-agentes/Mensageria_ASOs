@@ -102,10 +102,11 @@ def buscar_empresa(telefone: str) -> dict:
 
 
 def buscar_asos_por_funcionario(
-    numero_whatsapp:  str,
-    codigo_empresa:   str,
-    nome_funcionario: str,
-    janela_dias:      int = 365,
+    numero_whatsapp:    str,
+    codigo_empresa:     str,
+    nome_funcionario:   str,
+    janela_dias:        int = 365,
+    codigo_funcionario: str = "",
 ) -> dict:
     data_fim    = datetime.now()
     data_inicio = data_fim - timedelta(days=janela_dias)
@@ -120,37 +121,34 @@ def buscar_asos_por_funcionario(
     except Exception as e:
         return {"erro": str(e), "candidatos": []}
 
-    if asos:
-        print(f"[BOT] Campos do SOC (primeiro ASO): {list(asos[0].keys())}")
-
     candidatos = []
     for aso in asos:
-        nome_func = _campo(aso, "NOME", "NOME_FUNCIONARIO", "NOMEFUNCIONARIO")
+        nome_func = _campo(aso, "NOME_FUNCIONARIO", "NOME", "NOMEFUNCIONARIO")
         if not nome_func or not _nomes_batem(nome_funcionario, nome_func):
             continue
 
-        data = _campo(
-            aso,
-            "DATA_EMISSAO", "DATAEMISSAO", "DT_EMISSAO", "DTEMIISSAO",
-            "DATA_EMISSAO_ASO", "DATAEMISSAOASO", "DATA", "EMISSAO",
-        )
+        # Filtra por código do funcionário quando informado (evita homônimos)
+        if codigo_funcionario:
+            cod_aso = _campo(aso, "CD_FUNCIONARIO", "CODIGO_FUNCIONARIO", "COD_FUNCIONARIO", "MATRICULA", "CODIGO")
+            if cod_aso and cod_aso != str(codigo_funcionario):
+                continue
 
         candidatos.append({
             "cd_empresa":       _campo(aso, "CD_EMPRESA") or codigo_empresa,
             "cd_ged":           _campo(aso, "CD_GED"),
             "cd_arquivo":       _campo(aso, "CD_ARQUIVO_GED"),
             "nome_funcionario": nome_func,
-            "data_emissao":     data,
-            "nome_arquivo":     _campo(aso, "NOME_ARQUIVO", "NOMEARQUIVO"),
+            "data_emissao":     _campo(aso, "DT_EMISSAO"),
+            "nome_arquivo":     _campo(aso, "NM_ARQUIVOS_GED", "NM_GED"),
         })
 
-    candidatos = sorted(candidatos, key=lambda x: x["data_emissao"], reverse=True)[:8]
+    candidatos = sorted(candidatos, key=lambda x: x["data_emissao"], reverse=True)[:5]
 
     if candidatos:
         estado = buscar_estado(numero_whatsapp)
         salvar_estado(
             numero=numero_whatsapp,
-            fase="aguardando_confirmacao" if len(candidatos) > 1 else "livre",
+            fase="aguardando_confirmacao",
             codigo_empresa=(estado or {}).get("codigo_empresa") or codigo_empresa,
             candidatos=candidatos,
             nome_buscado=nome_funcionario,

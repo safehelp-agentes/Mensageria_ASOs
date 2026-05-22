@@ -352,7 +352,7 @@ input,textarea{font-family:inherit}
 .empty-state svg{width:40px;height:40px;color:var(--ink-200);margin:0 auto 12px;display:block}
 
 /* ─────────────────── MODAL ─────────────────── */
-.modal-overlay{position:fixed;inset:0;background:rgba(11,15,26,.45);z-index:100;display:none;align-items:center;justify-content:center;padding:20px}
+.modal-overlay{position:fixed;inset:0;background:rgba(11,15,26,.45);z-index:400;display:none;align-items:center;justify-content:center;padding:20px}
 .modal-overlay.open{display:flex}
 .modal{background:#fff;border-radius:12px;box-shadow:0 20px 60px rgba(11,15,26,.18);padding:24px;width:460px;max-width:100%}
 .modal h3{font-size:15px;font-weight:600;color:var(--ink-900);margin-bottom:20px;display:flex;align-items:center;gap:8px}
@@ -501,6 +501,12 @@ input,textarea{font-family:inherit}
         <span id="login-btn-text">Entrar</span>
       </button>
     </form>
+    <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--ink-100);text-align:center">
+      <button onclick="abrirConfig()" style="background:none;border:none;font-size:12px;color:var(--ink-400);cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-family:inherit;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Configurar conexão com Supabase
+      </button>
+    </div>
   </div>
 </div>
 
@@ -792,7 +798,7 @@ input,textarea{font-family:inherit}
       Configurações
     </h3>
     <div class="field"><label>Supabase URL</label><input type="text" id="cfg-url" placeholder="https://xxx.supabase.co"></div>
-    <div class="field"><label>Supabase Publishable Key</label><input type="text" id="cfg-key" placeholder="sb_publishable_..."></div>
+    <div class="field"><label>Supabase Anon Key (publishable)</label><input type="text" id="cfg-key" placeholder="eyJ..."></div>
     <div class="modal-btns">
       <button class="btn btn-ghost" onclick="fecharConfig()">Cancelar</button>
       <button class="btn btn-primary" onclick="salvarConfig()">Salvar</button>
@@ -830,11 +836,12 @@ input,textarea{font-family:inherit}
 
 <script>
 // ─────────────────── CONFIG ───────────────────
-// Valores injetados pelo build do Netlify via netlify.toml.
-// Em desenvolvimento local, configure via modal ⚙️.
+// Credenciais armazenadas no localStorage do navegador.
+// Na primeira visita o modal ⚙️ abre automaticamente para configuração.
+// Use a chave ANON/publishable do Supabase — nunca a service_role.
 const DEFAULTS = {
-  url: '__SUPABASE_URL__',
-  key: '__SUPABASE_KEY__',
+  url: '',
+  key: '',
 };
 const TZ = 'America/Sao_Paulo';
 

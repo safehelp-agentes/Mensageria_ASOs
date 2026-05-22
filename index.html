@@ -792,7 +792,7 @@ input,textarea{font-family:inherit}
       Configurações
     </h3>
     <div class="field"><label>Supabase URL</label><input type="text" id="cfg-url" placeholder="https://xxx.supabase.co"></div>
-    <div class="field"><label>Supabase Publishable Key</label><input type="text" id="cfg-key" placeholder="sb_publishable_..."></div>
+    <div class="field"><label>Supabase Anon Key (publishable)</label><input type="text" id="cfg-key" placeholder="eyJ..."></div>
     <div class="modal-btns">
       <button class="btn btn-ghost" onclick="fecharConfig()">Cancelar</button>
       <button class="btn btn-primary" onclick="salvarConfig()">Salvar</button>
@@ -830,11 +830,12 @@ input,textarea{font-family:inherit}
 
 <script>
 // ─────────────────── CONFIG ───────────────────
-// Valores injetados pelo build do Netlify via netlify.toml.
-// Em desenvolvimento local, configure via modal ⚙️.
+// Credenciais armazenadas no localStorage do navegador.
+// Na primeira visita o modal ⚙️ abre automaticamente para configuração.
+// Use a chave ANON/publishable do Supabase — nunca a service_role.
 const DEFAULTS = {
-  url: '__SUPABASE_URL__',
-  key: '__SUPABASE_KEY__',
+  url: '',
+  key: '',
 };
 const TZ = 'America/Sao_Paulo';
 

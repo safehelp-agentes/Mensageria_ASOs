@@ -261,6 +261,19 @@ def processar_mensagem(numero: str, mensagem: str, wamid: str = "", timestamp: i
     fase   = (estado or {}).get("fase", "livre")
     cod    = (estado or {}).get("codigo_empresa", "")
 
+    # Se ainda não há empresa associada ao número, valida no SOC
+    if not cod:
+        contato = tools.buscar_contato_soc_por_numero(numero)
+        if not contato:
+            _enviar(
+                numero,
+                "Não foi encontrado registro no SOC sobre o número utilizado. "
+                "Entre em contato com o atendimento humano pelo (43) 9182-1898.",
+            )
+            return
+        cod = str(contato.get("CODIGOEMPRESA", "")).strip()
+        print(f"[BOT] Contato SOC: {contato.get('NOMECONTATO')} — empresa {cod}")
+
     if not estado or fase == "livre":
         _fase_nova_conversa(numero, mensagem, cod)
         return

@@ -20,4 +20,5 @@ teste.txt
 .idea/
 .claude/settings.local.json
 .claude
-teste/
+testes/
+.env

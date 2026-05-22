@@ -142,7 +142,7 @@ def buscar_asos_por_funcionario(
             "nome_arquivo":     _campo(aso, "NM_ARQUIVOS_GED", "NM_GED"),
         })
 
-    candidatos = sorted(candidatos, key=lambda x: x["data_emissao"], reverse=True)[:8]
+    candidatos = sorted(candidatos, key=lambda x: x["data_emissao"], reverse=True)[:5]
 
     if candidatos:
         estado = buscar_estado(numero_whatsapp)

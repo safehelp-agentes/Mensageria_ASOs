@@ -1,6 +1,9 @@
 import os
 import re
 import json
+import time
+
+import openai
 
 from bot import llm, tools, state
 from src.meta.whatsapp import enviar_texto_meta
@@ -135,6 +138,15 @@ def processar_mensagem(numero: str, mensagem: str, wamid: str = "", timestamp: i
     for _ in range(5):
         try:
             resposta = llm.chamar_llm(messages, contexto)
+        except openai.RateLimitError as e:
+            print(f"[BOT] Rate limit — aguardando 15s e tentando novamente")
+            time.sleep(15)
+            try:
+                resposta = llm.chamar_llm(messages, contexto)
+            except Exception as e2:
+                print(f"[BOT] Erro após retry: {e2}")
+                resposta_final = "Desculpe, ocorreu um erro interno. Entre em contato com a SafeWork pelo número (43) 9182-1898."
+                break
         except Exception as e:
             print(f"[BOT] Erro na chamada ao LLM: {e}")
             resposta_final = "Desculpe, ocorreu um erro interno. Entre em contato com a SafeWork pelo número (43) 9182-1898."

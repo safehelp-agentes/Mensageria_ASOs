@@ -84,7 +84,10 @@ def _nomes_batem(busca: str, funcionario: str) -> bool:
     palavras = [p for p in b.split() if len(p) > 2]
     if not palavras:
         return False
-    # Basta qualquer palavra da busca aparecer no nome do funcionário
+    # Com múltiplas palavras (ex: "abimael soares"): TODAS devem aparecer no nome
+    # Com uma palavra (ex: "abimael"): basta aparecer
+    if len(palavras) >= 2:
+        return all(p in f for p in palavras)
     return any(p in f for p in palavras)
 
 

@@ -129,6 +129,8 @@ def buscar_funcionarios(codigo_empresa: str, nome_parcial: str) -> dict:
                 "codigo":   str(f.get("CODIGO") or ""),
             })
 
+        # Limita a 20 para não estourar o limite de 4096 chars do WhatsApp
+        matches = matches[:20]
         return {"total": len(matches), "funcionarios": matches}
 
     except Exception as e:

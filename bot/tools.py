@@ -175,11 +175,27 @@ def buscar_empresa(telefone: str) -> dict:
     return {"encontrada": False, "empresa": None}
 
 
+def _normalizar_data(data: str) -> str:
+    """
+    Normaliza datas para o formato DD/MM/YYYY.
+    Suporta: "DD/MM/YYYY", "YYYY-MM-DD", "DD/MM/YYYY HH:MM:SS", "YYYY-MM-DDTHH:MM:SS"
+    """
+    if not data:
+        return ""
+    data = data.strip().split("T")[0].split(" ")[0]  # remove parte de hora
+    if "-" in data:
+        # formato YYYY-MM-DD → converte para DD/MM/YYYY
+        partes = data.split("-")
+        if len(partes) == 3:
+            return f"{partes[2]}/{partes[1]}/{partes[0]}"
+    return data  # já está em DD/MM/YYYY
+
+
 def _buscar_asos_193037(codigo_empresa: str, codigo_funcionario: str) -> dict[str, dict]:
     """
-    Busca dados clínicos dos ASOs de um funcionário via exporta dados 193037.
-    Retorna dict indexado por data de emissão (DTASO) para cruzar com os dados do GED.
-    Ex: {"28/10/2025": {"tipo_aso": "Periódico", "resultado": "✅ Apto", "validade": "28/10/2026"}}
+    Busca tipos de ASO de um funcionário via exporta dados 193037.
+    Retorna dict indexado por data normalizada (DD/MM/YYYY) para cruzar com os dados do GED.
+    Ex: {"28/11/2025": {"tipo_aso": "Periódico"}}
     Retorna dict vazio se a chave não estiver configurada ou ocorrer erro.
     """
     if not _SOC_CHAVE_ASO_FUNCIONARIO or not codigo_funcionario:
@@ -200,28 +216,26 @@ def _buscar_asos_193037(codigo_empresa: str, codigo_funcionario: str) -> dict[st
     try:
         data = chamar_exporta_dados(parametro, timeout=30)
         if not isinstance(data, list):
+            print(f"[BOT] 193037: resposta inesperada — {type(data)}")
             return {}
 
-        # Cada linha pode ser um exame dentro do mesmo ASO — agrupa por DTASO + TPASO
+        # Cada linha pode ser um exame dentro do mesmo ASO — agrupa por DTASO normalizada
         por_data: dict[str, dict] = {}
         for linha in data:
-            dt_aso   = _campo(linha, "DTASO", "DATAFICHA")
+            dt_raw   = _campo(linha, "DTASO", "DATAFICHA")
+            dt_aso   = _normalizar_data(dt_raw)
             tipo_cod = str(linha.get("TPASO") or "").strip()
-            res_cod  = str(linha.get("RESASOSOC") or "").strip()
-            validade = _campo(linha, "DSVALIDADEASO")
 
             if not dt_aso:
                 continue
 
-            # Mantém apenas o registro mais recente por data (evita duplicatas de exames)
+            # Mantém apenas o primeiro registro por data (evita duplicatas de exames)
             if dt_aso not in por_data:
                 por_data[dt_aso] = {
-                    "tipo_aso":  _TIPO_ASO.get(tipo_cod, ""),
-                    "resultado": _RESULTADO_ASO.get(res_cod, ""),
-                    "validade":  validade,
+                    "tipo_aso": _TIPO_ASO.get(tipo_cod, ""),
                 }
 
-        print(f"[BOT] 193037: {len(por_data)} ASO(s) encontrado(s) para funcionário {codigo_funcionario}")
+        print(f"[BOT] 193037: {len(por_data)} ASO(s) — datas: {list(por_data.keys())}")
         return por_data
 
     except Exception as e:
@@ -266,9 +280,9 @@ def buscar_asos_por_funcionario(
             if cod_aso and cod_aso != str(codigo_funcionario):
                 continue
 
-        data_emissao = _campo(aso, "DT_EMISSAO")
+        data_emissao     = _normalizar_data(_campo(aso, "DT_EMISSAO"))
 
-        # Enriquece com o tipo de ASO do 193037 (se disponível para essa data)
+        # Enriquece com o tipo de ASO do 193037 cruzando pela data normalizada
         tipo_aso = info_tipo.get(data_emissao, {}).get("tipo_aso", "")
 
         candidatos.append({

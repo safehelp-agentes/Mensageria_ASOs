@@ -232,7 +232,10 @@ def _buscar_asos_193037(codigo_empresa: str, codigo_funcionario: str) -> dict[st
                 tipo_cod = str(linha.get("TPASO") or "").strip()
                 print(f"[BOT] 193037 linha: dt_raw={dt_raw!r} → dt_aso={dt_aso!r}, chave={chave!r}, tpaso={tipo_cod!r}")
                 if chave and chave not in por_data:
-                    por_data[chave] = {"tipo_aso": _TIPO_ASO.get(tipo_cod, "")}
+                    por_data[chave] = {
+                        "tipo_aso":  _TIPO_ASO.get(tipo_cod, ""),
+                        "data_real": dt_aso,   # data exata da 193037
+                    }
 
             print(f"[BOT] 193037: {len(por_data)} ASO(s) — datas: {list(por_data.keys())}")
             return por_data
@@ -297,7 +300,32 @@ def buscar_asos_por_funcionario(
             "tipo_aso":         tipo_aso,
         })
 
-    candidatos = sorted(candidatos, key=lambda x: x["data_emissao"], reverse=True)[:5]
+    # ── Adiciona entradas da 193037 sem documento no GED ─────────────────────
+    datas_ged = {
+        c["data_emissao"][3:] for c in candidatos
+        if len(c.get("data_emissao", "")) >= 7
+    }
+    for chave_mes, info in info_tipo.items():
+        if chave_mes not in datas_ged:
+            candidatos.append({
+                "cd_empresa":       codigo_empresa,
+                "cd_ged":           "",
+                "cd_arquivo":       "",
+                "nome_funcionario": nome_funcionario,
+                "data_emissao":     info.get("data_real", f"01/{chave_mes}"),
+                "nome_arquivo":     "",
+                "tipo_aso":         info.get("tipo_aso", ""),
+                "sem_documento":    True,
+            })
+
+    def _chave_data(x: dict) -> str:
+        """Ordena DD/MM/YYYY corretamente por YYYY-MM-DD."""
+        d = x.get("data_emissao", "")
+        if len(d) == 10 and d[2] == "/" and d[5] == "/":
+            return f"{d[6:]}-{d[3:5]}-{d[:2]}"
+        return d
+
+    candidatos = sorted(candidatos, key=_chave_data, reverse=True)[:10]
 
     if candidatos:
         estado = buscar_estado(numero_whatsapp)

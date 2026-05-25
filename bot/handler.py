@@ -252,6 +252,8 @@ def _fase_aguardando_funcionario(numero: str, mensagem: str, estado: dict):
         linha = f"{i}. {aso['nome_funcionario']} — {data}"
         if tipo:
             linha += f" — {tipo}"
+        if aso.get("sem_documento"):
+            linha += " — ⚠️ documento não disponível"
         linhas.append(linha)
     linhas.append("\n0. Voltar")
     _enviar(numero, "\n".join(linhas), cod)
@@ -293,6 +295,19 @@ def _fase_aguardando_aso(numero: str, mensagem: str, estado: dict):
 
     aso = candidatos[n - 1]
     print(f"[BOT] ASO selecionado: {aso.get('nome_funcionario')} {aso.get('data_emissao')}")
+
+    if aso.get("sem_documento"):
+        tipo = aso.get("tipo_aso", "")
+        data = aso.get("data_emissao", "")
+        descricao = f"{tipo} de {data}" if tipo else f"de {data}"
+        _enviar(
+            numero,
+            f"O ASO {descricao} foi registrado no sistema, mas o documento PDF "
+            "não está disponível no repositório de documentos.\n"
+            "Entre em contato com a SafeWork pelo (43) 9182-1898 para obtê-lo.",
+            cod,
+        )
+        return
 
     resultado = tools.baixar_e_enviar_aso(
         numero_whatsapp=numero,

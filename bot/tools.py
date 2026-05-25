@@ -227,10 +227,12 @@ def _buscar_asos_193037(codigo_empresa: str, codigo_funcionario: str) -> dict[st
             for linha in data:
                 dt_raw   = _campo(linha, "DTASO", "DATAFICHA")
                 dt_aso   = _normalizar_data(dt_raw)
+                # Indexa por MM/YYYY para tolerar diferença de 1-2 dias entre GED e 193037
+                chave    = dt_aso[3:] if len(dt_aso) >= 7 else dt_aso
                 tipo_cod = str(linha.get("TPASO") or "").strip()
-                print(f"[BOT] 193037 linha: dt_raw={dt_raw!r} → dt_aso={dt_aso!r}, tpaso={tipo_cod!r}")
-                if dt_aso and dt_aso not in por_data:
-                    por_data[dt_aso] = {"tipo_aso": _TIPO_ASO.get(tipo_cod, "")}
+                print(f"[BOT] 193037 linha: dt_raw={dt_raw!r} → dt_aso={dt_aso!r}, chave={chave!r}, tpaso={tipo_cod!r}")
+                if chave and chave not in por_data:
+                    por_data[chave] = {"tipo_aso": _TIPO_ASO.get(tipo_cod, "")}
 
             print(f"[BOT] 193037: {len(por_data)} ASO(s) — datas: {list(por_data.keys())}")
             return por_data
@@ -246,7 +248,7 @@ def buscar_asos_por_funcionario(
     numero_whatsapp:    str,
     codigo_empresa:     str,
     nome_funcionario:   str,
-    janela_dias:        int = 365,
+    janela_dias:        int = 3650,
     codigo_funcionario: str = "",
 ) -> dict:
     data_fim    = datetime.now()
@@ -278,7 +280,9 @@ def buscar_asos_por_funcionario(
                 continue
 
         data_emissao = _normalizar_data(_campo(aso, "DT_EMISSAO"))
-        tipo_aso     = info_tipo.get(data_emissao, {}).get("tipo_aso", "")
+        # Busca o tipo pelo MM/YYYY para tolerar diferença de dias entre GED e 193037
+        chave_mes    = data_emissao[3:] if len(data_emissao) >= 7 else data_emissao
+        tipo_aso     = info_tipo.get(chave_mes, {}).get("tipo_aso", "")
 
         candidatos.append({
             "cd_empresa":       _campo(aso, "CD_EMPRESA") or codigo_empresa,

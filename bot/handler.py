@@ -23,9 +23,29 @@ _MSG_MENU = (
 _RE_NUMERO = re.compile(r'^\s*(\d+)\s*$')
 
 
+_WA_MAX_CHARS = 4096
+
+
 def _enviar(numero: str, texto: str, cod_empresa: str = ""):
-    enviar_texto_meta(numero, texto)
-    state.registrar_mensagem_bot(numero, texto, cod_empresa)
+    """Envia texto ao WhatsApp, dividindo em partes se ultrapassar 4096 chars."""
+    if len(texto) <= _WA_MAX_CHARS:
+        enviar_texto_meta(numero, texto)
+        state.registrar_mensagem_bot(numero, texto, cod_empresa)
+        return
+
+    # Divide por linhas sem cortar no meio de uma linha
+    linhas = texto.splitlines(keepends=True)
+    parte  = ""
+    for linha in linhas:
+        if len(parte) + len(linha) > _WA_MAX_CHARS:
+            if parte:
+                enviar_texto_meta(numero, parte.rstrip())
+                state.registrar_mensagem_bot(numero, parte.rstrip(), cod_empresa)
+                parte = ""
+        parte += linha
+    if parte.strip():
+        enviar_texto_meta(numero, parte.rstrip())
+        state.registrar_mensagem_bot(numero, parte.rstrip(), cod_empresa)
 
 
 def _extrair_numero(mensagem: str) -> int | None:
@@ -260,6 +280,19 @@ def processar_mensagem(numero: str, mensagem: str, wamid: str = "", timestamp: i
     estado = state.buscar_estado(numero)
     fase   = (estado or {}).get("fase", "livre")
     cod    = (estado or {}).get("codigo_empresa", "")
+
+    # Se ainda não há empresa associada ao número, valida no SOC
+    if not cod:
+        contato = tools.buscar_contato_soc_por_numero(numero)
+        if not contato:
+            _enviar(
+                numero,
+                "Não foi encontrado registro no SOC sobre o número utilizado. "
+                "Entre em contato com o atendimento humano pelo (43) 9182-1898.",
+            )
+            return
+        cod = str(contato.get("CODIGOEMPRESA", "")).strip()
+        print(f"[BOT] Contato SOC: {contato.get('NOMECONTATO')} — empresa {cod}")
 
     if not estado or fase == "livre":
         _fase_nova_conversa(numero, mensagem, cod)

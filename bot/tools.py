@@ -1,5 +1,6 @@
 import os
 import io
+import re
 import sys
 import zipfile
 import tempfile
@@ -9,14 +10,54 @@ from unicodedata import normalize as _unorm
 from src.soc.api import buscar_todos_asos_empresa, chamar_exporta_dados
 from src.soc.downloader import baixar_documento
 from src.meta.whatsapp import _fazer_upload_pdf, _enviar_documento_simples
-from bot.state import (
-    buscar_empresa_por_telefone as _buscar_empresa,
-    buscar_estado, salvar_estado, resetar_estado,
-)
+from bot.state import buscar_estado, salvar_estado, resetar_estado
 
 _SOC_EMPRESA_PRINCIPAL       = os.getenv("SOC_EMPRESA", "").strip()
 _SOC_CHAVE_FUNCIONARIOS      = os.getenv("SOC_CHAVE_FUNCIONARIOS", "").strip()
 _CODIGO_EXPORTA_FUNCIONARIOS = "192399"
+
+# Exporta Dados 215872 — Contatos das Empresas (validação de acesso via WhatsApp)
+_CODIGO_EXPORTA_CONTATOS_WA = "215872"
+_SOC_CHAVE_CONTATOS_WA      = os.getenv("SOC_CHAVE_CONTATOS_WA", "cf3265cee0cb1dfeca54").strip()
+
+
+def _so_digitos(s: str) -> str:
+    return re.sub(r"\D", "", str(s or ""))
+
+
+def buscar_contato_soc_por_numero(telefone: str) -> dict | None:
+    """
+    Consulta o SOC (exportadados 215872) e retorna o contato cujo TEL1 ou TEL2
+    bate com o número de WhatsApp recebido. Retorna None se não encontrar.
+    O campo CODIGOEMPRESA do retorno é usado como restrição nas buscas.
+    """
+    sufixo = _so_digitos(telefone)[-11:]
+    if not sufixo or not _SOC_EMPRESA_PRINCIPAL:
+        return None
+
+    parametro = {
+        "empresa":   _SOC_EMPRESA_PRINCIPAL,
+        "codigo":    _CODIGO_EXPORTA_CONTATOS_WA,
+        "chave":     _SOC_CHAVE_CONTATOS_WA,
+        "tipoSaida": "json",
+    }
+
+    try:
+        dados = chamar_exporta_dados(parametro, timeout=30)
+    except Exception as e:
+        print(f"[BOT] Erro ao validar número no SOC: {e}")
+        return None
+
+    if not isinstance(dados, list):
+        return None
+
+    for contato in dados:
+        tel1 = _so_digitos(contato.get("TEL1") or "")
+        tel2 = _so_digitos(contato.get("TEL2") or "")
+        if (tel1 and sufixo in tel1) or (tel2 and sufixo in tel2):
+            return contato
+
+    return None
 
 
 def _normalizar_nome(nome: str) -> str:
@@ -88,6 +129,8 @@ def buscar_funcionarios(codigo_empresa: str, nome_parcial: str) -> dict:
                 "codigo":   str(f.get("CODIGO") or ""),
             })
 
+        # Limita a 20 para não estourar o limite de 4096 chars do WhatsApp
+        matches = matches[:20]
         return {"total": len(matches), "funcionarios": matches}
 
     except Exception as e:

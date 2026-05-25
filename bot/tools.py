@@ -268,6 +268,8 @@ def buscar_asos_por_funcionario(
     except Exception as e:
         return {"erro": str(e), "candidatos": []}
 
+    print(f"[BOT] GED: {len(asos)} documento(s) no período — empresa={codigo_empresa}")
+
     candidatos = []
     for aso in asos:
         nome_func = _campo(aso, "NOME_FUNCIONARIO", "NOME", "NOMEFUNCIONARIO")
@@ -276,6 +278,7 @@ def buscar_asos_por_funcionario(
 
         if codigo_funcionario:
             cod_aso = _campo(aso, "CD_FUNCIONARIO", "CODIGO_FUNCIONARIO", "COD_FUNCIONARIO", "MATRICULA", "CODIGO")
+            print(f"[BOT] GED match nome: {nome_func!r} | cd_func GED={cod_aso!r} | esperado={codigo_funcionario!r}")
             if cod_aso and cod_aso != str(codigo_funcionario):
                 continue
 

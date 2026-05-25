@@ -26,9 +26,18 @@ def _chamar(system: str, user: str, max_tokens: int = 150) -> str:
 
 
 def _parse_json(texto: str) -> dict:
-    """Extrai JSON mesmo que venha dentro de bloco markdown."""
+    """Extrai JSON mesmo que venha dentro de bloco markdown ou com texto ao redor."""
     texto = re.sub(r"```(?:json)?", "", texto).strip().strip("`").strip()
-    return json.loads(texto)
+    # Tenta direto primeiro
+    try:
+        return json.loads(texto)
+    except json.JSONDecodeError:
+        pass
+    # Fallback: extrai o primeiro objeto JSON encontrado no texto
+    match = re.search(r'\{[^{}]*\}', texto, re.DOTALL)
+    if match:
+        return json.loads(match.group())
+    raise ValueError(f"Nenhum JSON encontrado em: {texto[:200]}")
 
 
 # ── Funções de interpretação ───────────────────────────────────────────────────

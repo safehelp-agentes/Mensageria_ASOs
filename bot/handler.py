@@ -99,7 +99,15 @@ def _tentar_busca_rapida(numero: str, mensagem: str, cod_empresa: str) -> bool:
             linhas.append("\n0. Voltar")
             _enviar(numero, "\n".join(linhas), cod_empresa)
             return True
-        # Nome não encontrado — deixa cair no fluxo normal
+
+        # Nome extraído mas não encontrado — informa e pede o nome novamente
+        _enviar(
+            numero,
+            f"Não encontrei nenhum funcionário com o nome \"{nome}\". Poderia verificar o nome?",
+            cod_empresa,
+        )
+        state.salvar_estado(numero, fase="aguardando_nome_funcionario", codigo_empresa=cod_empresa)
+        return True
 
     elif intencao["quer_aso"]:
         _enviar(numero, "Qual o nome do funcionário que você deseja buscar?", cod_empresa)
@@ -149,7 +157,23 @@ def _fase_menu_principal(numero: str, mensagem: str, estado: dict):
 def _fase_aguardando_nome(numero: str, mensagem: str, estado: dict):
     cod = estado.get("codigo_empresa", "")
 
+    # Comando de voltar
+    if mensagem.strip() == "0":
+        _enviar(numero, _MSG_MENU, cod)
+        state.salvar_estado(numero, fase="menu_principal", codigo_empresa=cod)
+        return
+
     nome = llm.interpretar_nome_funcionario(mensagem)
+
+    # Fallback: se o LLM falhar, usa o texto direto quando parece um nome
+    # (o bot acabou de perguntar "Qual o nome?", então qualquer resposta curta É o nome)
+    if not nome:
+        texto    = mensagem.strip()
+        palavras = texto.split()
+        if 1 <= len(palavras) <= 5 and not any(p.isdigit() for p in palavras):
+            nome = texto
+            print(f"[BOT] Nome via fallback direto: {nome}")
+
     if not nome:
         _enviar(numero, "Não identifiquei um nome. Por favor, informe o nome do funcionário:", cod)
         return

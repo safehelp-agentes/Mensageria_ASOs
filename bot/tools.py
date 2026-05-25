@@ -20,6 +20,19 @@ _CODIGO_EXPORTA_FUNCIONARIOS = "192399"
 _CODIGO_EXPORTA_CONTATOS_WA = "215872"
 _SOC_CHAVE_CONTATOS_WA      = os.getenv("SOC_CHAVE_CONTATOS_WA", "cf3265cee0cb1dfeca54").strip()
 
+# Exporta Dados 193037 — ASOs do Funcionário (dados clínicos detalhados)
+_CODIGO_EXPORTA_ASO_FUNCIONARIO = "193037"
+_SOC_CHAVE_ASO_FUNCIONARIO      = os.getenv("SOC_CHAVE_ASO_FUNCIONARIO", "").strip()
+
+_TIPO_ASO = {
+    "0": "Admissional",
+    "1": "Periódico",
+    "2": "Retorno ao Trabalho",
+    "3": "Mudança de Função",
+    "4": "Monitoração Pontual",
+    "8": "Demissional",
+}
+
 
 def _so_digitos(s: str) -> str:
     return re.sub(r"\D", "", str(s or ""))
@@ -162,6 +175,60 @@ def buscar_empresa(telefone: str) -> dict:
     return {"encontrada": False, "empresa": None}
 
 
+def _buscar_asos_193037(codigo_empresa: str, codigo_funcionario: str) -> dict[str, dict]:
+    """
+    Busca dados clínicos dos ASOs de um funcionário via exporta dados 193037.
+    Retorna dict indexado por data de emissão (DTASO) para cruzar com os dados do GED.
+    Ex: {"28/10/2025": {"tipo_aso": "Periódico", "resultado": "✅ Apto", "validade": "28/10/2026"}}
+    Retorna dict vazio se a chave não estiver configurada ou ocorrer erro.
+    """
+    if not _SOC_CHAVE_ASO_FUNCIONARIO or not codigo_funcionario:
+        return {}
+
+    parametro = {
+        "empresa":         _SOC_EMPRESA_PRINCIPAL,
+        "codigo":          _CODIGO_EXPORTA_ASO_FUNCIONARIO,
+        "chave":           _SOC_CHAVE_ASO_FUNCIONARIO,
+        "tipoSaida":       "json",
+        "funcionario":     str(codigo_funcionario),
+        "tipoASO":         "1,2,3,4,5,6",
+        "paramFiltroData": "0",
+        "dataInicio":      "",
+        "dataFim":         "",
+    }
+
+    try:
+        data = chamar_exporta_dados(parametro, timeout=30)
+        if not isinstance(data, list):
+            return {}
+
+        # Cada linha pode ser um exame dentro do mesmo ASO — agrupa por DTASO + TPASO
+        por_data: dict[str, dict] = {}
+        for linha in data:
+            dt_aso   = _campo(linha, "DTASO", "DATAFICHA")
+            tipo_cod = str(linha.get("TPASO") or "").strip()
+            res_cod  = str(linha.get("RESASOSOC") or "").strip()
+            validade = _campo(linha, "DSVALIDADEASO")
+
+            if not dt_aso:
+                continue
+
+            # Mantém apenas o registro mais recente por data (evita duplicatas de exames)
+            if dt_aso not in por_data:
+                por_data[dt_aso] = {
+                    "tipo_aso":  _TIPO_ASO.get(tipo_cod, ""),
+                    "resultado": _RESULTADO_ASO.get(res_cod, ""),
+                    "validade":  validade,
+                }
+
+        print(f"[BOT] 193037: {len(por_data)} ASO(s) encontrado(s) para funcionário {codigo_funcionario}")
+        return por_data
+
+    except Exception as e:
+        print(f"[BOT] Erro ao chamar exporta dados 193037: {e}")
+        return {}
+
+
 def buscar_asos_por_funcionario(
     numero_whatsapp:    str,
     codigo_empresa:     str,
@@ -173,6 +240,11 @@ def buscar_asos_por_funcionario(
     data_inicio = data_fim - timedelta(days=janela_dias)
     fmt = "%d/%m/%Y"
 
+    # ── Busca tipos de ASO via 193037 (indexado por data) ─────────────────────
+    # Retorna dict: {"28/10/2025": {"tipo_aso": "Periódico"}, ...}
+    info_tipo = _buscar_asos_193037(codigo_empresa, codigo_funcionario)
+
+    # ── Busca documentos no GED (fonte dos arquivos PDF) ──────────────────────
     try:
         asos = buscar_todos_asos_empresa(
             codigo_empresa,
@@ -194,13 +266,19 @@ def buscar_asos_por_funcionario(
             if cod_aso and cod_aso != str(codigo_funcionario):
                 continue
 
+        data_emissao = _campo(aso, "DT_EMISSAO")
+
+        # Enriquece com o tipo de ASO do 193037 (se disponível para essa data)
+        tipo_aso = info_tipo.get(data_emissao, {}).get("tipo_aso", "")
+
         candidatos.append({
             "cd_empresa":       _campo(aso, "CD_EMPRESA") or codigo_empresa,
             "cd_ged":           _campo(aso, "CD_GED"),
             "cd_arquivo":       _campo(aso, "CD_ARQUIVO_GED"),
             "nome_funcionario": nome_func,
-            "data_emissao":     _campo(aso, "DT_EMISSAO"),
+            "data_emissao":     data_emissao,
             "nome_arquivo":     _campo(aso, "NM_ARQUIVOS_GED", "NM_GED"),
+            "tipo_aso":         tipo_aso,
         })
 
     candidatos = sorted(candidatos, key=lambda x: x["data_emissao"], reverse=True)[:5]

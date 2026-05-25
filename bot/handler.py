@@ -11,7 +11,7 @@ _NUMEROS_TESTE: set[str] = {
 _MSG_BOAS_VINDAS = (
     "Olá! Sou o robô responsável pela medicina na SafeWork. "
     "Esse é um canal oficial, mas sem atendimento humano. "
-    "Caso necessite falar com uma pessoa, entre em contato pelo (43) 9182-1898."
+    "Caso necessite falar com uma pessoa, entre em contato pelo (45) 3264-5085."
 )
 
 _MSG_MENU = (
@@ -245,10 +245,14 @@ def _fase_aguardando_funcionario(numero: str, mensagem: str, estado: dict):
         state.salvar_estado(numero, fase="menu_principal", codigo_empresa=cod)
         return
 
-    linhas = [f"Qual ASO você deseja?\n"]
+    linhas = ["Qual ASO você deseja?\n"]
     for i, aso in enumerate(candidatos, 1):
         data = aso.get("data_emissao") or "data não disponível"
-        linhas.append(f"{i}. {aso['nome_funcionario']} — {data}")
+        tipo = aso.get("tipo_aso", "")
+        linha = f"{i}. {aso['nome_funcionario']} — {data}"
+        if tipo:
+            linha += f" — {tipo}"
+        linhas.append(linha)
     linhas.append("\n0. Voltar")
     _enviar(numero, "\n".join(linhas), cod)
     # Estado com ASOs já salvo por buscar_asos_por_funcionario (fase=aguardando_confirmacao)

@@ -218,8 +218,17 @@ def _buscar_asos_193037(codigo_empresa: str, codigo_funcionario: str) -> dict[st
 
     try:
         data = chamar_exporta_dados(parametro, timeout=30)
+
+        print(f"[BOT] 193037 raw: tipo={type(data).__name__}, len={len(data) if isinstance(data, list) else '-'}")
+        if isinstance(data, list) and data:
+            print(f"[BOT] 193037 primeiro item: {data[0]}")
+
         if not isinstance(data, list):
-            print(f"[BOT] 193037: resposta inesperada — {type(data)}")
+            print(f"[BOT] 193037: resposta inesperada — {data}")
+            return {}
+
+        if not data:
+            print(f"[BOT] 193037: API retornou lista vazia para funcionario={codigo_funcionario}")
             return {}
 
         # Cada linha pode ser um exame dentro do mesmo ASO — agrupa por DTASO normalizada
@@ -228,6 +237,8 @@ def _buscar_asos_193037(codigo_empresa: str, codigo_funcionario: str) -> dict[st
             dt_raw   = _campo(linha, "DTASO", "DATAFICHA")
             dt_aso   = _normalizar_data(dt_raw)
             tipo_cod = str(linha.get("TPASO") or "").strip()
+
+            print(f"[BOT] 193037 linha: dt_raw={dt_raw!r} → dt_aso={dt_aso!r}, tpaso={tipo_cod!r}")
 
             if not dt_aso:
                 continue

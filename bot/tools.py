@@ -117,16 +117,34 @@ def buscar_funcionarios(codigo_empresa: str, nome_parcial: str) -> dict:
             return {"total": 0, "funcionarios": []}
 
         matches = []
+        vistos  = set()  # deduplicação por nome + cargo
+
         for f in data:
             nome = (f.get("NOME") or "").strip()
             if not nome or not _nomes_batem(nome_parcial, nome):
                 continue
+
+            # Ignora funcionários inativos/demitidos — SOC retorna "Ativo" ou "Inativo"
+            situacao = (f.get("SITUACAO") or "").strip()
+            if situacao.lower() not in {"ativo", ""}:
+                continue
+
+            cargo  = (f.get("NOMECARGO") or "").strip()
+            setor  = (f.get("NOMESETOR") or "").strip()
+            codigo = str(f.get("CODIGO") or "")
+
+            # Deduplica pelo par (nome, cargo) — mesmo funcionário pode ter múltiplos registros
+            chave = (nome.upper(), cargo.upper())
+            if chave in vistos:
+                continue
+            vistos.add(chave)
+
             matches.append({
                 "nome":     nome,
-                "cargo":    (f.get("NOMECARGO") or "").strip(),
-                "setor":    (f.get("NOMESETOR") or "").strip(),
-                "situacao": (f.get("SITUACAO") or "").strip(),
-                "codigo":   str(f.get("CODIGO") or ""),
+                "cargo":    cargo,
+                "setor":    setor,
+                "situacao": situacao,
+                "codigo":   codigo,
             })
 
         # Limita a 20 para não estourar o limite de 4096 chars do WhatsApp

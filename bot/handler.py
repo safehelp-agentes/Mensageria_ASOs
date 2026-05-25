@@ -60,9 +60,12 @@ def _interceptar_comando_teste(numero: str, mensagem: str) -> bool:
     if not match:
         return False
     codigo = match.group(1)
-    state.salvar_estado(numero=numero, fase="livre", codigo_empresa=codigo)
-    _enviar(numero, f"Modo teste ativo. Empresa definida como {codigo}.")
+    # Reseta estado completamente e define a empresa de teste
+    state.salvar_estado(numero=numero, fase="livre", codigo_empresa=codigo, candidatos=[], nome_buscado="")
+    _enviar(numero, f"[TESTE] Empresa definida como {codigo}. Iniciando atendimento...")
     print(f"[BOT] Teste: empresa {codigo} definida para {numero}")
+    # Inicia o fluxo normalmente, como se fosse a primeira mensagem de um usuário real
+    _fase_nova_conversa(numero, "oi", codigo)
     return True
 
 
@@ -283,6 +286,11 @@ def processar_mensagem(numero: str, mensagem: str, wamid: str = "", timestamp: i
 
     # Se ainda não há empresa associada ao número, valida no SOC
     if not cod:
+        # Número de teste sem empresa definida: orienta a usar o comando correto
+        if numero in _NUMEROS_TESTE:
+            _enviar(numero, "Número de teste detectado. Para iniciar, envie:\nempresa <código>\n\nExemplo: empresa 12345")
+            return
+
         contato = tools.buscar_contato_soc_por_numero(numero)
         if not contato:
             _enviar(

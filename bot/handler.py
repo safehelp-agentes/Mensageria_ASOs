@@ -69,18 +69,20 @@ def _interceptar_comando_teste(numero: str, mensagem: str) -> bool:
     return True
 
 
-# ── Fases ─────────────────────────────────────────────────────────────────────
+# ── Helpers de intenção ───────────────────────────────────────────────────────
 
-def _fase_nova_conversa(numero: str, mensagem: str, cod_empresa: str):
-    _enviar(numero, _MSG_BOAS_VINDAS, cod_empresa)
-
+def _tentar_busca_rapida(numero: str, mensagem: str, cod_empresa: str) -> bool:
+    """
+    Detecta se a mensagem contém intenção de buscar ASO (com ou sem nome).
+    Executa o fluxo correspondente e retorna True se tratou a mensagem.
+    Retorna False se não identificou intenção clara de ASO.
+    """
     intencao = llm.interpretar_mensagem_inicial(mensagem)
-    print(f"[BOT] Intenção inicial: {intencao}")
+    print(f"[BOT] Intenção detectada: {intencao}")
 
     if intencao["quer_aso"] and intencao["nome"]:
-        # Fast path: já sabe que quer ASO e qual funcionário — pula menu e "qual nome?"
-        nome         = intencao["nome"]
-        resultado    = tools.buscar_funcionarios(codigo_empresa=cod_empresa, nome_parcial=nome)
+        nome      = intencao["nome"]
+        resultado = tools.buscar_funcionarios(codigo_empresa=cod_empresa, nome_parcial=nome)
         funcionarios = resultado.get("funcionarios", [])
 
         if funcionarios:
@@ -96,14 +98,23 @@ def _fase_nova_conversa(numero: str, mensagem: str, cod_empresa: str):
                 linhas.append(f"{i}. {f['nome']} — {f['cargo']} — {f['setor']}")
             linhas.append("\n0. Voltar")
             _enviar(numero, "\n".join(linhas), cod_empresa)
-            return
-
-        # Nome não encontrado — cai no fluxo normal abaixo
+            return True
+        # Nome não encontrado — deixa cair no fluxo normal
 
     elif intencao["quer_aso"]:
-        # Sabe que quer ASO mas não mencionou nome — pula menu
         _enviar(numero, "Qual o nome do funcionário que você deseja buscar?", cod_empresa)
         state.salvar_estado(numero, fase="aguardando_nome_funcionario", codigo_empresa=cod_empresa)
+        return True
+
+    return False
+
+
+# ── Fases ─────────────────────────────────────────────────────────────────────
+
+def _fase_nova_conversa(numero: str, mensagem: str, cod_empresa: str):
+    _enviar(numero, _MSG_BOAS_VINDAS, cod_empresa)
+
+    if _tentar_busca_rapida(numero, mensagem, cod_empresa):
         return
 
     # Sem intenção clara — mostra menu
@@ -116,6 +127,10 @@ def _fase_menu_principal(numero: str, mensagem: str, estado: dict):
 
     n = _extrair_numero(mensagem)
     if n is None:
+        # Tenta detectar intenção rica antes de cair na interpretação do menu
+        # Ex: "quero o aso do abimael" → vai direto para a busca sem precisar digitar "1"
+        if _tentar_busca_rapida(numero, mensagem, cod):
+            return
         n = llm.interpretar_opcao_menu(mensagem)
 
     if n == 1:

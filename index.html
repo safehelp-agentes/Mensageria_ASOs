@@ -615,20 +615,20 @@ input,textarea{font-family:inherit}
         <div class="kpi-sub" id="kpi-total-sub">carregando…</div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-icon-wrap" style="background:var(--amber-soft);color:var(--amber-700)">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <div class="kpi-icon-wrap" style="background:#F0F0FF;color:#4338CA">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         </div>
-        <div class="kpi-label">Pendentes</div>
-        <div class="kpi-value" id="kpi-pendentes">—</div>
-        <div class="kpi-sub">sem assinatura digital</div>
+        <div class="kpi-label">Conversas pelo Bot</div>
+        <div class="kpi-value" id="kpi-bot-conversas">—</div>
+        <div class="kpi-sub" id="kpi-bot-conversas-sub">números únicos no período</div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-icon-wrap" style="background:#E6F9F0;color:#15803D">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        <div class="kpi-icon-wrap" style="background:var(--brand-soft);color:var(--brand-deep)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg>
         </div>
-        <div class="kpi-label">Prontos para Envio</div>
-        <div class="kpi-value" id="kpi-prontos">—</div>
-        <div class="kpi-sub">assinados, aguardando envio</div>
+        <div class="kpi-label">ASOs pelo Bot</div>
+        <div class="kpi-value" id="kpi-bot-asos">—</div>
+        <div class="kpi-sub">documentos entregues sob demanda</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-icon-wrap" style="background:var(--brand-soft);color:var(--brand-deep)">
@@ -851,6 +851,7 @@ let asoFiltroTab     = 'todos';
 let dashChart        = null;
 let empresaChart     = null;
 let dashData         = null;
+let msgBotData       = null;
 let todasEmpresas    = [];
 let editandoEmpresa  = null;
 
@@ -1565,12 +1566,20 @@ function autoResize(el){ el.style.height = 'auto'; el.style.height = Math.min(el
 async function carregarDashboard() {
   if (!sb) return;
   try {
-    const { data, error } = await sb.from('asos_enviados')
-      .select('chave_aso,codigo_empresa,nome_empresa,data_emissao,data_envio,enviado,assinado,numero_destino,created_at')
-      .order('created_at', { ascending: false })
-      .limit(10000);
-    if (error) throw error;
-    dashData = data || [];
+    const [resAsos, resMsgs] = await Promise.all([
+      sb.from('asos_enviados')
+        .select('chave_aso,codigo_empresa,nome_empresa,data_emissao,data_envio,enviado,assinado,numero_destino,created_at')
+        .order('created_at', { ascending: false })
+        .limit(10000),
+      sb.from('mensagens')
+        .select('numero_whatsapp,tipo,created_at,codigo_empresa')
+        .order('created_at', { ascending: false })
+        .limit(50000),
+    ]);
+    if (resAsos.error) throw resAsos.error;
+    if (resMsgs.error) throw resMsgs.error;
+    dashData   = resAsos.data || [];
+    msgBotData = resMsgs.data || [];
     renderDashboard();
   } catch(e) {
     console.error(e);
@@ -1610,8 +1619,16 @@ function renderDashboard() {
     return true;
   });
 
-  const prontos   = naoenFiltrados.filter(a =>  a.assinado);
-  const pendentes = naoenFiltrados.filter(a => !a.assinado);
+  // KPIs do bot — filtra mensagens pelo mesmo período e empresa
+  const msgFiltradas = (msgBotData || []).filter(m => {
+    const dia = (m.created_at || '').substring(0, 10);
+    if (inicio && dia < inicio) return false;
+    if (fim    && dia > fim)    return false;
+    if (empresa && !(m.codigo_empresa || '').includes(empresa)) return false;
+    return true;
+  });
+  const botConversas = new Set(msgFiltradas.map(m => m.numero_whatsapp).filter(Boolean)).size;
+  const botAsos      = msgFiltradas.filter(m => m.tipo === 'aso_enviado').length;
 
   const diasComEnvio = new Set(envFiltrados.map(a => a.data_envio).filter(Boolean)).size;
   const mediaDiaria  = diasComEnvio > 0
@@ -1623,8 +1640,11 @@ function renderDashboard() {
   document.getElementById('kpi-total-sub').textContent = temFiltro
     ? `filtrado de ${dashData.length} registros`
     : `${dashData.length} registros no total`;
-  document.getElementById('kpi-pendentes').textContent = pendentes.length;
-  document.getElementById('kpi-prontos').textContent   = prontos.length;
+  document.getElementById('kpi-bot-conversas').textContent     = botConversas || '0';
+  document.getElementById('kpi-bot-conversas-sub').textContent = botConversas === 1
+    ? '1 número único no período'
+    : `${botConversas} números únicos no período`;
+  document.getElementById('kpi-bot-asos').textContent = botAsos || '0';
   document.getElementById('kpi-hoje').textContent      = mediaDiaria;
   document.getElementById('kpi-hoje-sub').textContent  = diasComEnvio > 0
     ? `em ${diasComEnvio} dia${diasComEnvio !== 1 ? 's' : ''} com envio`

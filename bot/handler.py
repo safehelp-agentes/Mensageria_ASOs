@@ -325,6 +325,14 @@ def _fase_aguardando_aso(numero: str, mensagem: str, estado: dict):
             "Entre em contato com a SafeWork pelo número (43) 9182-1898.",
             cod,
         )
+    else:
+        # Registra o envio para KPIs do dashboard
+        state.registrar_mensagem_bot(
+            numero=numero,
+            conteudo=f"{aso.get('nome_funcionario', '')} — {aso.get('data_emissao', '')}",
+            codigo_empresa=cod,
+            tipo="aso_enviado",
+        )
 
     _enviar(numero, _MSG_MENU, cod)
     state.salvar_estado(numero, fase="menu_principal", codigo_empresa=cod)

@@ -146,6 +146,7 @@ def registrar_mensagem_bot(
     conteudo:       str,
     codigo_empresa: str = "",
     nome_empresa:   str = "",
+    tipo:           str = "bot",
 ):
     try:
         requests.post(
@@ -156,7 +157,7 @@ def registrar_mensagem_bot(
                 "nome_empresa":    nome_empresa,
                 "numero_whatsapp": numero,
                 "direcao":         "outbound",
-                "tipo":            "bot",
+                "tipo":            tipo,
                 "conteudo":        conteudo,
             },
             timeout=10,

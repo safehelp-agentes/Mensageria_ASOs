@@ -1,24 +1,61 @@
+# ── Credenciais e segredos ─────────────────────────────────────────────────────
 .env
+.env.local
+.env.*.local
+*.env
+service_account*.json
+*_credentials.json
+*.pem
+*.key
+*.p12
+
+# ── Ambiente virtual ───────────────────────────────────────────────────────────
 .venv/
+venv/
+env/
+ENV/
+
+# ── Python ─────────────────────────────────────────────────────────────────────
 __pycache__/
 *.pyc
 *.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
 
-# Credenciais
-service_account.json
-
-# Estado em runtime (não versionar)
+# ── Dados em runtime (não versionar) ──────────────────────────────────────────
 data/pendentes.json
 data/erros_aso.json
+data/*.json
 
-# Saídas geradas
+# ── Saídas geradas ─────────────────────────────────────────────────────────────
 output/
 output.txt
-teste.txt
+*.log
+logs/
 
-# IDE / ferramentas locais
+# ── Build do CRM (index.html com credenciais embutidas) ───────────────────────
+# O index.html versionado deve ter apenas os placeholders __SUPABASE_URL__ etc.
+# Nunca versionar após rodar build.py
+
+# ── IDE e ferramentas locais ───────────────────────────────────────────────────
 .idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ── Claude Code ────────────────────────────────────────────────────────────────
 .claude/settings.local.json
-.claude
+
+# ── Testes e arquivos temporários ─────────────────────────────────────────────
+# testes/ excluídos pois podem conter dados reais de empresas/funcionários
+# Remova esta linha se os testes forem seguros para versionar
 testes/
-.env
+teste.txt
+*.tmp
+temp/

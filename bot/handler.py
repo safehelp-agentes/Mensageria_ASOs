@@ -11,7 +11,7 @@ _NUMEROS_TESTE: set[str] = {
 _MSG_BOAS_VINDAS = (
     "Olá! Sou o robô responsável pela medicina na SafeWork. "
     "Esse é um canal oficial, mas sem atendimento humano. "
-    "Caso necessite falar com uma pessoa, entre em contato pelo (43) 9182-1898."
+    "Caso necessite falar com uma pessoa, entre em contato pelo (45) 3264-5085."
 )
 
 _MSG_MENU = (
@@ -60,24 +60,29 @@ def _interceptar_comando_teste(numero: str, mensagem: str) -> bool:
     if not match:
         return False
     codigo = match.group(1)
-    state.salvar_estado(numero=numero, fase="livre", codigo_empresa=codigo)
-    _enviar(numero, f"Modo teste ativo. Empresa definida como {codigo}.")
+    # Reseta estado completamente e define a empresa de teste
+    state.salvar_estado(numero=numero, fase="livre", codigo_empresa=codigo, candidatos=[], nome_buscado="")
+    _enviar(numero, f"[TESTE] Empresa definida como {codigo}. Iniciando atendimento...")
     print(f"[BOT] Teste: empresa {codigo} definida para {numero}")
+    # Inicia o fluxo normalmente, como se fosse a primeira mensagem de um usuário real
+    _fase_nova_conversa(numero, "oi", codigo)
     return True
 
 
-# ── Fases ─────────────────────────────────────────────────────────────────────
+# ── Helpers de intenção ───────────────────────────────────────────────────────
 
-def _fase_nova_conversa(numero: str, mensagem: str, cod_empresa: str):
-    _enviar(numero, _MSG_BOAS_VINDAS, cod_empresa)
-
+def _tentar_busca_rapida(numero: str, mensagem: str, cod_empresa: str) -> bool:
+    """
+    Detecta se a mensagem contém intenção de buscar ASO (com ou sem nome).
+    Executa o fluxo correspondente e retorna True se tratou a mensagem.
+    Retorna False se não identificou intenção clara de ASO.
+    """
     intencao = llm.interpretar_mensagem_inicial(mensagem)
-    print(f"[BOT] Intenção inicial: {intencao}")
+    print(f"[BOT] Intenção detectada: {intencao}")
 
     if intencao["quer_aso"] and intencao["nome"]:
-        # Fast path: já sabe que quer ASO e qual funcionário — pula menu e "qual nome?"
-        nome         = intencao["nome"]
-        resultado    = tools.buscar_funcionarios(codigo_empresa=cod_empresa, nome_parcial=nome)
+        nome      = intencao["nome"]
+        resultado = tools.buscar_funcionarios(codigo_empresa=cod_empresa, nome_parcial=nome)
         funcionarios = resultado.get("funcionarios", [])
 
         if funcionarios:
@@ -93,14 +98,31 @@ def _fase_nova_conversa(numero: str, mensagem: str, cod_empresa: str):
                 linhas.append(f"{i}. {f['nome']} — {f['cargo']} — {f['setor']}")
             linhas.append("\n0. Voltar")
             _enviar(numero, "\n".join(linhas), cod_empresa)
-            return
+            return True
 
-        # Nome não encontrado — cai no fluxo normal abaixo
+        # Nome extraído mas não encontrado — informa e pede o nome novamente
+        _enviar(
+            numero,
+            f"Não encontrei nenhum funcionário com o nome \"{nome}\". Poderia verificar o nome?",
+            cod_empresa,
+        )
+        state.salvar_estado(numero, fase="aguardando_nome_funcionario", codigo_empresa=cod_empresa)
+        return True
 
     elif intencao["quer_aso"]:
-        # Sabe que quer ASO mas não mencionou nome — pula menu
         _enviar(numero, "Qual o nome do funcionário que você deseja buscar?", cod_empresa)
         state.salvar_estado(numero, fase="aguardando_nome_funcionario", codigo_empresa=cod_empresa)
+        return True
+
+    return False
+
+
+# ── Fases ─────────────────────────────────────────────────────────────────────
+
+def _fase_nova_conversa(numero: str, mensagem: str, cod_empresa: str):
+    _enviar(numero, _MSG_BOAS_VINDAS, cod_empresa)
+
+    if _tentar_busca_rapida(numero, mensagem, cod_empresa):
         return
 
     # Sem intenção clara — mostra menu
@@ -113,6 +135,10 @@ def _fase_menu_principal(numero: str, mensagem: str, estado: dict):
 
     n = _extrair_numero(mensagem)
     if n is None:
+        # Tenta detectar intenção rica antes de cair na interpretação do menu
+        # Ex: "quero o aso do abimael" → vai direto para a busca sem precisar digitar "1"
+        if _tentar_busca_rapida(numero, mensagem, cod):
+            return
         n = llm.interpretar_opcao_menu(mensagem)
 
     if n == 1:
@@ -131,7 +157,23 @@ def _fase_menu_principal(numero: str, mensagem: str, estado: dict):
 def _fase_aguardando_nome(numero: str, mensagem: str, estado: dict):
     cod = estado.get("codigo_empresa", "")
 
+    # Comando de voltar
+    if mensagem.strip() == "0":
+        _enviar(numero, _MSG_MENU, cod)
+        state.salvar_estado(numero, fase="menu_principal", codigo_empresa=cod)
+        return
+
     nome = llm.interpretar_nome_funcionario(mensagem)
+
+    # Fallback: se o LLM falhar, usa o texto direto quando parece um nome
+    # (o bot acabou de perguntar "Qual o nome?", então qualquer resposta curta É o nome)
+    if not nome:
+        texto    = mensagem.strip()
+        palavras = texto.split()
+        if 1 <= len(palavras) <= 5 and not any(p.isdigit() for p in palavras):
+            nome = texto
+            print(f"[BOT] Nome via fallback direto: {nome}")
+
     if not nome:
         _enviar(numero, "Não identifiquei um nome. Por favor, informe o nome do funcionário:", cod)
         return
@@ -203,10 +245,16 @@ def _fase_aguardando_funcionario(numero: str, mensagem: str, estado: dict):
         state.salvar_estado(numero, fase="menu_principal", codigo_empresa=cod)
         return
 
-    linhas = [f"Qual ASO você deseja?\n"]
+    linhas = ["Qual ASO você deseja?\n"]
     for i, aso in enumerate(candidatos, 1):
         data = aso.get("data_emissao") or "data não disponível"
-        linhas.append(f"{i}. {aso['nome_funcionario']} — {data}")
+        tipo = aso.get("tipo_aso", "")
+        linha = f"{i}. {aso['nome_funcionario']} — {data}"
+        if tipo:
+            linha += f" — {tipo}"
+        if aso.get("sem_documento"):
+            linha += " — ⚠️ documento não disponível"
+        linhas.append(linha)
     linhas.append("\n0. Voltar")
     _enviar(numero, "\n".join(linhas), cod)
     # Estado com ASOs já salvo por buscar_asos_por_funcionario (fase=aguardando_confirmacao)
@@ -248,6 +296,19 @@ def _fase_aguardando_aso(numero: str, mensagem: str, estado: dict):
     aso = candidatos[n - 1]
     print(f"[BOT] ASO selecionado: {aso.get('nome_funcionario')} {aso.get('data_emissao')}")
 
+    if aso.get("sem_documento"):
+        tipo = aso.get("tipo_aso", "")
+        data = aso.get("data_emissao", "")
+        descricao = f"{tipo} de {data}" if tipo else f"de {data}"
+        _enviar(
+            numero,
+            f"O ASO {descricao} foi registrado no sistema, mas o documento PDF "
+            "não está disponível no repositório de documentos.\n"
+            "Entre em contato com a SafeWork pelo (43) 9182-1898 para obtê-lo.",
+            cod,
+        )
+        return
+
     resultado = tools.baixar_e_enviar_aso(
         numero_whatsapp=numero,
         cd_empresa=aso["cd_empresa"],
@@ -263,6 +324,14 @@ def _fase_aguardando_aso(numero: str, mensagem: str, estado: dict):
             f"Não consegui enviar o ASO: {resultado.get('erro', 'erro desconhecido')}. "
             "Entre em contato com a SafeWork pelo número (43) 9182-1898.",
             cod,
+        )
+    else:
+        # Registra o envio para KPIs do dashboard
+        state.registrar_mensagem_bot(
+            numero=numero,
+            conteudo=f"{aso.get('nome_funcionario', '')} — {aso.get('data_emissao', '')}",
+            codigo_empresa=cod,
+            tipo="aso_enviado",
         )
 
     _enviar(numero, _MSG_MENU, cod)
@@ -283,6 +352,11 @@ def processar_mensagem(numero: str, mensagem: str, wamid: str = "", timestamp: i
 
     # Se ainda não há empresa associada ao número, valida no SOC
     if not cod:
+        # Número de teste sem empresa definida: orienta a usar o comando correto
+        if numero in _NUMEROS_TESTE:
+            _enviar(numero, "Número de teste detectado. Para iniciar, envie:\nempresa <código>\n\nExemplo: empresa 12345")
+            return
+
         contato = tools.buscar_contato_soc_por_numero(numero)
         if not contato:
             _enviar(

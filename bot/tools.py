@@ -149,15 +149,21 @@ def buscar_funcionarios(codigo_empresa: str, nome_parcial: str) -> dict:
 
         matches = []
         vistos  = set()
+        total_api      = len(data)
+        filtrados_nome = 0
+        filtrados_sit  = 0
 
         for f in data:
             nome = (f.get("NOME") or "").strip()
             if not nome or not _nomes_batem(nome_parcial, nome):
                 continue
+            filtrados_nome += 1
 
             # Ignora funcionários inativos/demitidos — SOC retorna "Ativo" ou "Inativo"
             situacao = (f.get("SITUACAO") or "").strip()
             if situacao.lower() not in {"ativo", ""}:
+                print(f"[BOT] buscar_funcionarios: {nome!r} ignorado — situacao={situacao!r}")
+                filtrados_sit += 1
                 continue
 
             cargo  = (f.get("NOMECARGO") or "").strip()
@@ -178,6 +184,7 @@ def buscar_funcionarios(codigo_empresa: str, nome_parcial: str) -> dict:
                 "codigo":   codigo,
             })
 
+        print(f"[BOT] buscar_funcionarios: API={total_api} | nome_match={filtrados_nome} | bloqueados_situacao={filtrados_sit} | resultado={len(matches)}")
         matches = matches[:20]
         return {"total": len(matches), "funcionarios": matches}
 

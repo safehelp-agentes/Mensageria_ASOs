@@ -505,16 +505,6 @@ Detalhes completos em [SECURITY.md](SECURITY.md).
 
 ---
 
-## Roadmap
-
-- [ ] Validação HMAC-SHA256 do webhook Meta no bot (`X-Hub-Signature-256`)
-- [ ] Suporte a múltiplas empresas por número de WhatsApp (menu de seleção)
-- [x] Logging estruturado no bot (`[BOT]`, `[META]`, `[SOC]`) visível via `journalctl`
-- [ ] Migrar `print()` para `logging` com rotação de arquivos e níveis (DEBUG/INFO/ERROR)
-- [ ] Testes unitários para `helpers.py`, parser SOAP e `bot/handler.py`
-- [ ] Containerizar o pipeline (Docker Compose junto com n8n)
-
----
 
 <div align="center">
 

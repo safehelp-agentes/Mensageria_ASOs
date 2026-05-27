@@ -144,6 +144,7 @@ def buscar_funcionarios(codigo_empresa: str, nome_parcial: str) -> dict:
             "dataInicio":     "",
             "dataFim":        "",
         }
+        print(f"[BOT] buscar_funcionarios: params empresa={parametro['empresa']!r} codigo={parametro['codigo']!r} empresaTrabalho={parametro['empresaTrabalho']!r} chave={parametro['chave'][:6]}...")
         data = chamar_exporta_dados(parametro, timeout=30)
         print(f"[BOT] buscar_funcionarios: retorno SOC tipo={type(data).__name__} qtd={len(data) if isinstance(data, list) else '-'} preview={str(data)[:200]}")
 

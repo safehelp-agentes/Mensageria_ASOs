@@ -193,33 +193,72 @@ python main.py --data "09/05/2026"
 
 Servidor FastAPI que responde mensagens WhatsApp sob demanda, 24/7.
 
-### Iniciar o bot
+### Configurar o serviço systemd (primeira vez)
+
+O bot roda como um serviço Linux gerenciado pelo systemd — isso garante que ele **sobe automaticamente** com o servidor e **reinicia sozinho** se travar.
 
 ```bash
-cd /opt/safework/envio_ASO
-source .venv/bin/activate
+# 1. Criar o arquivo de serviço
+cat > /etc/systemd/system/envio-aso.service << 'EOF'
+[Unit]
+Description=SafeWork Bot — Envio ASO
+After=network.target
 
-# Foreground (desenvolvimento)
-uvicorn bot.service:app --host 0.0.0.0 --port 8001 --reload
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/safework/envio_ASO
+EnvironmentFile=/opt/safework/envio_ASO/.env
+ExecStart=/opt/safework/envio_ASO/.venv/bin/uvicorn bot.service:app --host 0.0.0.0 --port 8001
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
 
-# Background (produção)
-nohup uvicorn bot.service:app --host 0.0.0.0 --port 8001 --reload \
-  > logs/bot.log 2>&1 &
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# 2. Ativar e iniciar
+systemctl daemon-reload
+systemctl enable envio-aso   # inicia automaticamente no boot
+systemctl start envio-aso
+systemctl status envio-aso   # deve mostrar "active (running)"
+```
+
+> **Só é necessário fazer isso uma vez.** Após configurado, use os comandos abaixo no dia a dia.
+
+### Gerenciar o serviço
+
+```bash
+systemctl start envio-aso      # iniciar
+systemctl stop envio-aso       # parar
+systemctl restart envio-aso    # reiniciar (necessário após git pull)
+systemctl status envio-aso     # ver estado atual
 ```
 
 ### Verificar status
 
 ```bash
-ps aux | grep uvicorn
+systemctl status envio-aso
 curl http://localhost:8001/bot/health
 # → {"status":"ok","bot_ativo":true}
 ```
 
-### Parar o bot
+### Ver logs
 
 ```bash
-pkill -f uvicorn
-# ou pelo PID: kill -9 <PID>
+journalctl -u envio-aso -f        # logs em tempo real
+journalctl -u envio-aso -n 50     # últimas 50 linhas
+journalctl -u envio-aso --since "1 hour ago"
+```
+
+### Modo foreground (desenvolvimento local)
+
+```bash
+cd /opt/safework/envio_ASO
+source .venv/bin/activate
+uvicorn bot.service:app --host 0.0.0.0 --port 8001 --reload
 ```
 
 ### Fluxo de conversa
@@ -401,8 +440,9 @@ envio_ASO/
 
 ```bash
 cd /opt/safework/envio_ASO
-git pull origin SecretariaEletronica
-# O uvicorn com --reload detecta mudanças e reinicia automaticamente
+git pull origin main
+systemctl restart envio-aso
+systemctl status envio-aso   # confirmar que voltou "active (running)"
 ```
 
 ### Atualizar o CRM
@@ -452,6 +492,9 @@ Detalhes completos em [SECURITY.md](SECURITY.md).
 | `Erro envio template: HTTP 400` | Template não aprovado ou nome errado | Painel Meta → Message Templates |
 | `BLOQUEIO DE SEGURANÇA` | Trava funcionando corretamente | Ativar `ENVIO_REAL_EMPRESAS=true` |
 | `[SUPABASE] Erro upsert: 403` | RLS bloqueando ou chave errada | Verificar `SUPABASE_SERVICE_KEY` em supabase.com → Settings → API |
+| Bot: não responde após `git pull` | Serviço não foi reiniciado | `systemctl restart envio-aso` |
+| Bot: `inactive (dead)` no status | Serviço nunca foi configurado | Ver seção *Configurar o serviço systemd* |
+| Bot: `failed` no status | Erro na inicialização | `journalctl -u envio-aso -n 50` para ver o motivo |
 | Bot: `Não foi encontrado registro no SOC` | Número não cadastrado no exportador 215872 | Cadastrar o contato no SOC com TEL1/TEL2 correto |
 | Bot: tipo ASO não aparece na lista | `SOC_CHAVE_ASO_FUNCIONARIO` não configurado | Adicionar chave do exportador 193037 ao `.env` |
 | Bot: `193037: 0 ASO(s)` nos logs | Empresa errada no parâmetro da API | O bot tenta empresa principal e empresa cliente automaticamente; verificar logs `[BOT] 193037 tentativa` |

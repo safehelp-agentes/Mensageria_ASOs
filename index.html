@@ -1724,7 +1724,7 @@ function renderDashChart(labels, values) {
         },
         y: {
           grid: { color: '#E8EBF3' },
-          ticks: { font: { size: 10 }, color: '#8C95B2', stepSize: 1, precision: 0 },
+          ticks: { font: { size: 10 }, color: '#8C95B2', maxTicksLimit: 8, precision: 0 },
           border: { display: false },
           beginAtZero: true,
         }
@@ -1792,7 +1792,7 @@ function renderEmpresaChart(data) {
       scales: {
         x: {
           grid: { color: '#E8EBF3' },
-          ticks: { font: { size: 10 }, color: '#8C95B2', stepSize: 1, precision: 0 },
+          ticks: { font: { size: 10 }, color: '#8C95B2', maxTicksLimit: 8, precision: 0 },
           border: { display: false },
           beginAtZero: true,
         },

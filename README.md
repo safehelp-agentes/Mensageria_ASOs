@@ -495,6 +495,8 @@ Detalhes completos em [SECURITY.md](SECURITY.md).
 | Bot: não responde após `git pull` | Serviço não foi reiniciado | `systemctl restart envio-aso` |
 | Bot: `inactive (dead)` no status | Serviço nunca foi configurado | Ver seção *Configurar o serviço systemd* |
 | Bot: `failed` no status | Erro na inicialização | `journalctl -u envio-aso -n 50` para ver o motivo |
+| Bot: "Não encontrei nenhum funcionário" para qualquer nome | `SOC_CHAVE_FUNCIONARIOS` ausente no `.env` | Adicionar chave do exportador `192399` ao `.env` e reiniciar |
+| Bot: `[BOT] SOC retornou 0 registro(s)` nos logs | `SOC_EMPRESA` não configurado ou chave 192399 vinculada à empresa errada | Verificar `SOC_EMPRESA` no `.env` — o exportador 192399 exige `empresa=principal` |
 | Bot: `Não foi encontrado registro no SOC` | Número não cadastrado no exportador 215872 | Cadastrar o contato no SOC com TEL1/TEL2 correto |
 | Bot: tipo ASO não aparece na lista | `SOC_CHAVE_ASO_FUNCIONARIO` não configurado | Adicionar chave do exportador 193037 ao `.env` |
 | Bot: `193037: 0 ASO(s)` nos logs | Empresa errada no parâmetro da API | O bot tenta empresa principal e empresa cliente automaticamente; verificar logs `[BOT] 193037 tentativa` |
@@ -507,7 +509,8 @@ Detalhes completos em [SECURITY.md](SECURITY.md).
 
 - [ ] Validação HMAC-SHA256 do webhook Meta no bot (`X-Hub-Signature-256`)
 - [ ] Suporte a múltiplas empresas por número de WhatsApp (menu de seleção)
-- [ ] Migrar `print()` para `logging` com rotação de arquivos
+- [x] Logging estruturado no bot (`[BOT]`, `[META]`, `[SOC]`) visível via `journalctl`
+- [ ] Migrar `print()` para `logging` com rotação de arquivos e níveis (DEBUG/INFO/ERROR)
 - [ ] Testes unitários para `helpers.py`, parser SOAP e `bot/handler.py`
 - [ ] Containerizar o pipeline (Docker Compose junto com n8n)
 

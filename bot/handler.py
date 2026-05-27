@@ -101,6 +101,7 @@ def _tentar_busca_rapida(numero: str, mensagem: str, cod_empresa: str) -> bool:
             return True
 
         # Nome extraído mas não encontrado — informa e pede o nome novamente
+        print(f"[BOT] ⚠ Nenhum funcionário encontrado para nome={nome!r} empresa={cod_empresa!r}")
         _enviar(
             numero,
             f"Não encontrei nenhum funcionário com o nome \"{nome}\". Poderia verificar o nome?",
@@ -349,6 +350,7 @@ def processar_mensagem(numero: str, mensagem: str, wamid: str = "", timestamp: i
     estado = state.buscar_estado(numero)
     fase   = (estado or {}).get("fase", "livre")
     cod    = (estado or {}).get("codigo_empresa", "")
+    print(f"[BOT] fase={fase!r} | empresa={cod!r}")
 
     # Se ainda não há empresa associada ao número, valida no SOC
     if not cod:

@@ -56,20 +56,24 @@ def buscar_contato_soc_por_numero(telefone: str) -> dict | None:
     }
 
     try:
+        print(f"[BOT] validar_numero | sufixo={sufixo} | exportador={_CODIGO_EXPORTA_CONTATOS_WA}")
         dados = chamar_exporta_dados(parametro, timeout=30)
     except Exception as e:
-        print(f"[BOT] Erro ao validar número no SOC: {e}")
+        print(f"[BOT] ❌ validar_numero ERRO: {e}")
         return None
 
     if not isinstance(dados, list):
+        print(f"[BOT] ❌ validar_numero: SOC retornou tipo inesperado {type(dados).__name__}")
         return None
 
     for contato in dados:
         tel1 = _so_digitos(contato.get("TEL1") or "")
         tel2 = _so_digitos(contato.get("TEL2") or "")
         if (tel1 and sufixo in tel1) or (tel2 and sufixo in tel2):
+            print(f"[BOT] validar_numero | encontrado: {contato.get('NOMECONTATO')} | empresa={contato.get('CODIGOEMPRESA')}")
             return contato
 
+    print(f"[BOT] validar_numero | número {sufixo} não encontrado no SOC (215872)")
     return None
 
 
@@ -127,55 +131,50 @@ def _normalizar_data(data: str) -> str:
 
 def buscar_funcionarios(codigo_empresa: str, nome_parcial: str) -> dict:
     """Lista funcionários de uma empresa filtrando por nome parcial."""
-    print(f"[BOT] buscar_funcionarios: empresa={codigo_empresa!r} nome={nome_parcial!r} chave_ok={bool(_SOC_CHAVE_FUNCIONARIOS)}")
+    print(f"[BOT] buscar_funcionarios | empresa={codigo_empresa!r} | busca={nome_parcial!r} | chave={'OK' if _SOC_CHAVE_FUNCIONARIOS else 'AUSENTE ⚠'}")
+
     if not _SOC_CHAVE_FUNCIONARIOS:
-        print("[BOT] buscar_funcionarios: SOC_CHAVE_FUNCIONARIOS não configurado — abortando")
+        print("[BOT] ❌ SOC_CHAVE_FUNCIONARIOS não configurada no .env — busca abortada")
         return {"erro": "SOC_CHAVE_FUNCIONARIOS não configurado", "funcionarios": []}
 
     try:
         parametro = {
-            "empresa":        _SOC_EMPRESA_PRINCIPAL,
-            "codigo":         _CODIGO_EXPORTA_FUNCIONARIOS,
-            "chave":          _SOC_CHAVE_FUNCIONARIOS,
-            "tipoSaida":      "json",
-            "empresaTrabalho": str(codigo_empresa),
-            "cpf":            "",
-            "parametroData":  "0",
-            "dataInicio":     "",
-            "dataFim":        "",
+            "empresa":       str(codigo_empresa),
+            "codigo":        _CODIGO_EXPORTA_FUNCIONARIOS,
+            "chave":         _SOC_CHAVE_FUNCIONARIOS,
+            "tipoSaida":     "json",
+            "cpf":           "",
+            "parametroData": "0",
+            "dataInicio":    "",
+            "dataFim":       "",
         }
-        print(f"[BOT] buscar_funcionarios: params empresa={parametro['empresa']!r} codigo={parametro['codigo']!r} empresaTrabalho={parametro['empresaTrabalho']!r} chave={parametro['chave'][:6]}...")
+        print(f"[BOT] SOC req | exportador={_CODIGO_EXPORTA_FUNCIONARIOS} | empresa={codigo_empresa}")
         data = chamar_exporta_dados(parametro, timeout=30)
-        print(f"[BOT] buscar_funcionarios: retorno SOC tipo={type(data).__name__} qtd={len(data) if isinstance(data, list) else '-'} preview={str(data)[:200]}")
 
         if not isinstance(data, list):
-            print(f"[BOT] buscar_funcionarios: SOC não retornou lista — abortando")
+            print(f"[BOT] ❌ SOC retornou tipo inesperado: {type(data).__name__} | conteúdo: {str(data)[:200]}")
             return {"total": 0, "funcionarios": []}
 
-        matches = []
-        vistos  = set()
-        total_api      = len(data)
-        filtrados_nome = 0
-        filtrados_sit  = 0
+        print(f"[BOT] SOC retornou {len(data)} registro(s) para empresa={codigo_empresa}")
+
+        matches  = []
+        vistos   = set()
+        ignorados_situacao = []
 
         for f in data:
             nome = (f.get("NOME") or "").strip()
             if not nome or not _nomes_batem(nome_parcial, nome):
                 continue
-            filtrados_nome += 1
 
-            # Ignora funcionários inativos/demitidos — SOC retorna "Ativo" ou "Inativo"
             situacao = (f.get("SITUACAO") or "").strip()
             if situacao.lower() not in {"ativo", ""}:
-                print(f"[BOT] buscar_funcionarios: {nome!r} ignorado — situacao={situacao!r}")
-                filtrados_sit += 1
+                ignorados_situacao.append(f"{nome} ({situacao})")
                 continue
 
             cargo  = (f.get("NOMECARGO") or "").strip()
             setor  = (f.get("NOMESETOR") or "").strip()
             codigo = str(f.get("CODIGO") or "")
 
-            # Deduplica pelo par (nome, cargo)
             chave = (nome.upper(), cargo.upper())
             if chave in vistos:
                 continue
@@ -189,12 +188,16 @@ def buscar_funcionarios(codigo_empresa: str, nome_parcial: str) -> dict:
                 "codigo":   codigo,
             })
 
-        print(f"[BOT] buscar_funcionarios: API={total_api} | nome_match={filtrados_nome} | bloqueados_situacao={filtrados_sit} | resultado={len(matches)}")
+        if ignorados_situacao:
+            print(f"[BOT] ⚠ Ignorados por situação inativa: {ignorados_situacao}")
+
         matches = matches[:20]
+        print(f"[BOT] buscar_funcionarios | resultado: {len(matches)} encontrado(s)" +
+              (f" → {[f['nome'] for f in matches]}" if matches else " → nenhum"))
         return {"total": len(matches), "funcionarios": matches}
 
     except Exception as e:
-        print(f"[BOT] buscar_funcionarios: EXCEÇÃO — {e}")
+        print(f"[BOT] ❌ buscar_funcionarios ERRO: {e}")
         return {"erro": str(e), "funcionarios": []}
 
 
@@ -284,6 +287,7 @@ def buscar_asos_por_funcionario(
     except Exception as e:
         return {"erro": str(e), "candidatos": []}
 
+    print(f"[BOT] buscar_asos | funcionario={nome_funcionario!r} | cod={codigo_funcionario!r} | empresa={codigo_empresa}")
     print(f"[BOT] GED: {len(asos)} documento(s) no período — empresa={codigo_empresa}")
 
     candidatos = []
@@ -339,6 +343,7 @@ def buscar_asos_por_funcionario(
         return d
 
     candidatos = sorted(candidatos, key=_chave_data, reverse=True)[:10]
+    print(f"[BOT] buscar_asos | resultado: {len(candidatos)} ASO(s) encontrado(s) para {nome_funcionario!r}")
 
     if candidatos:
         estado = buscar_estado(numero_whatsapp)

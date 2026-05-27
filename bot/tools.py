@@ -139,16 +139,17 @@ def buscar_funcionarios(codigo_empresa: str, nome_parcial: str) -> dict:
 
     try:
         parametro = {
-            "empresa":       str(codigo_empresa),
-            "codigo":        _CODIGO_EXPORTA_FUNCIONARIOS,
-            "chave":         _SOC_CHAVE_FUNCIONARIOS,
-            "tipoSaida":     "json",
-            "cpf":           "",
-            "parametroData": "0",
-            "dataInicio":    "",
-            "dataFim":       "",
+            "empresa":        _SOC_EMPRESA_PRINCIPAL,
+            "codigo":         _CODIGO_EXPORTA_FUNCIONARIOS,
+            "chave":          _SOC_CHAVE_FUNCIONARIOS,
+            "tipoSaida":      "json",
+            "empresaTrabalho": str(codigo_empresa),
+            "cpf":            "",
+            "parametroData":  "0",
+            "dataInicio":     "",
+            "dataFim":        "",
         }
-        print(f"[BOT] SOC req | exportador={_CODIGO_EXPORTA_FUNCIONARIOS} | empresa={codigo_empresa}")
+        print(f"[BOT] SOC req | exportador={_CODIGO_EXPORTA_FUNCIONARIOS} | principal={_SOC_EMPRESA_PRINCIPAL} | cliente={codigo_empresa}")
         data = chamar_exporta_dados(parametro, timeout=30)
 
         if not isinstance(data, list):

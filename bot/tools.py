@@ -127,7 +127,9 @@ def _normalizar_data(data: str) -> str:
 
 def buscar_funcionarios(codigo_empresa: str, nome_parcial: str) -> dict:
     """Lista funcionários de uma empresa filtrando por nome parcial."""
+    print(f"[BOT] buscar_funcionarios: empresa={codigo_empresa!r} nome={nome_parcial!r} chave_ok={bool(_SOC_CHAVE_FUNCIONARIOS)}")
     if not _SOC_CHAVE_FUNCIONARIOS:
+        print("[BOT] buscar_funcionarios: SOC_CHAVE_FUNCIONARIOS não configurado — abortando")
         return {"erro": "SOC_CHAVE_FUNCIONARIOS não configurado", "funcionarios": []}
 
     try:
@@ -143,8 +145,10 @@ def buscar_funcionarios(codigo_empresa: str, nome_parcial: str) -> dict:
             "dataFim":        "",
         }
         data = chamar_exporta_dados(parametro, timeout=30)
+        print(f"[BOT] buscar_funcionarios: retorno SOC tipo={type(data).__name__} qtd={len(data) if isinstance(data, list) else '-'} preview={str(data)[:200]}")
 
         if not isinstance(data, list):
+            print(f"[BOT] buscar_funcionarios: SOC não retornou lista — abortando")
             return {"total": 0, "funcionarios": []}
 
         matches = []
@@ -189,6 +193,7 @@ def buscar_funcionarios(codigo_empresa: str, nome_parcial: str) -> dict:
         return {"total": len(matches), "funcionarios": matches}
 
     except Exception as e:
+        print(f"[BOT] buscar_funcionarios: EXCEÇÃO — {e}")
         return {"erro": str(e), "funcionarios": []}
 
 

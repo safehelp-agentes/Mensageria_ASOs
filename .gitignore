@@ -39,7 +39,8 @@ logs/
 
 # ── Build do CRM (index.html com credenciais embutidas) ───────────────────────
 # O index.html versionado deve ter apenas os placeholders __SUPABASE_URL__ etc.
-# Nunca versionar após rodar build.py
+# Nunca versionar após rodar build.py (as credenciais são injetadas localmente
+# e o arquivo resultante é copiado para /opt/safework/crm/ no servidor).
 
 # ── IDE e ferramentas locais ───────────────────────────────────────────────────
 .idea/

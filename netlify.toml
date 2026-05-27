@@ -1,9 +1,15 @@
+# ⚠️  ARQUIVO LEGADO — Netlify descontinuado
+#
+# O CRM agora roda em container nginx:alpine no servidor VPS, servido via Traefik.
+# Acesso: https://n8n.srv1564091.hstgr.cloud/CrmEnvioAso
+# Volume: /opt/safework/crm/index.html
+#
+# Para atualizar o CRM, veja a seção "Atualizar o CRM" no README.md.
+# Este arquivo é mantido apenas para referência histórica.
+
 [build]
   publish = "."
   command = "python3 build.py"
 
 [build.environment]
-  # SUPABASE_URL e SUPABASE_KEY são chaves públicas (anon/publishable) do Supabase,
-  # protegidas por RLS — não são segredos reais. Netlify as trata como segredo
-  # porque são env vars, então dizemos explicitamente para ignorá-las no scan.
   SECRETS_SCAN_OMIT_KEYS = "SUPABASE_URL,SUPABASE_SECRET_KEY,SUPABASE_KEY"

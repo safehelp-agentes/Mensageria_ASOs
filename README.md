@@ -302,9 +302,9 @@ O bot assume aquela empresa para toda a sessão, como se o número estivesse cad
 
 Interface web para monitorar conversas, ASOs enviados, empresas e métricas.
 
-**Acesso:** `https://n8n.seudominio.com/CrmEnvioAso`
+**Acesso:** [`https://n8n.srv1564091.hstgr.cloud/CrmEnvioAso`](https://n8n.srv1564091.hstgr.cloud/CrmEnvioAso)
 
-O `index.html` é servido pelo container `n8n-crm-1` (nginx:alpine), com volume mapeado em `/opt/safework/crm`.
+O `index.html` é servido pelo container `n8n-crm-1` (nginx:alpine), com volume mapeado em `/opt/safework/crm`. O Traefik faz o proxy reverso com TLS automático — não é necessário nenhum serviço externo (antigo Netlify foi descontinuado).
 
 ### Atualizar o CRM após mudanças
 
@@ -315,7 +315,7 @@ cd /opt/safework/envio_ASO
 git checkout index.html
 
 # 2. Puxa as mudanças
-git pull origin SecretariaEletronica
+git pull origin main
 
 # 3. Injeta credenciais e copia para o nginx
 export $(grep -v '^#' .env | grep -v '^$' | xargs)
@@ -450,7 +450,7 @@ systemctl status envio-aso   # confirmar que voltou "active (running)"
 ```bash
 cd /opt/safework/envio_ASO
 git checkout index.html
-git pull origin SecretariaEletronica
+git pull origin main
 export $(grep -v '^#' .env | grep -v '^$' | xargs)
 python build.py && cp index.html /opt/safework/crm/
 ```

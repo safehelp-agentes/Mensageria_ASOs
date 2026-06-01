@@ -30,6 +30,9 @@ ARQUIVO_ERROS_ASO = os.path.join(BASE_DIR, "data", "erros_aso.json")
 # ── SOC API ────────────────────────────────────────────────────────────────────
 SOC_URL          = (os.getenv("SOC_URL") or "https://ws1.soc.com.br/WebSoc/exportadados").strip()
 SOC_DOWNLOAD_URL = "https://ws1.soc.com.br/WSSoc/DownloadArquivosWs"
+SOC_IMPORTACAO_EMPRESA_URL   = (os.getenv("SOC_IMPORTACAO_EMPRESA_URL") or "https://ws1.soc.com.br/WSSoc/EmpresaWs").strip()
+SOC_CHAVE_IMPORTACAO_EMPRESA = (os.getenv("SOC_CHAVE_IMPORTACAO_EMPRESA") or "").strip()
+SOC_HOMOLOGACAO              = (os.getenv("SOC_HOMOLOGACAO") or "false").strip().lower() == "true"
 
 SOC_EMPRESA_PRINCIPAL = (os.getenv("SOC_EMPRESA") or "").strip()
 SOC_CHAVE_EMPRESAS    = (os.getenv("SOC_CHAVE_EMPRESAS") or "").strip()

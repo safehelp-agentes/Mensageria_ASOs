@@ -147,8 +147,12 @@ graph TB
         SOC[src/soc/<br/>📋 SOC]
         SOC_API[api.py<br/>REST Exporta Dados]
         SOC_DL[downloader.py<br/>SOAP WS-Security]
+        SOC_EMP[empresa.py<br/>SOAP alterarEmpresa]
+        SOC_CAD[cadastra_contatos.py<br/>Playwright CDP]
         SOC --> SOC_API
         SOC --> SOC_DL
+        SOC --> SOC_EMP
+        SOC --> SOC_CAD
     end
 
     subgraph Pipeline
@@ -186,6 +190,12 @@ graph TB
 - **Trocar de provedor SOC** afeta só `src/soc/` (e o nome dos campos no `main.py`).
 - **Trocar de WhatsApp para Telegram** afeta só `src/meta/` (e a flag de envio no `main.py`).
 - **Adicionar uma nova integração de log** entra como mais um arquivo em `src/integrations/` sem mexer no resto.
+
+### Módulos novos em `src/soc/`
+
+**`empresa.py`** — atualiza dados cadastrais de uma empresa no SOC via WebService SOAP `alterarEmpresa` (WSDL: `EmpresaWs`). Reutiliza `gerar_wsse_password_digest()` do `downloader.py`. Retorna `ResultadoWs` com código SOC-100/200/206/207.
+
+**`cadastra_contatos.py`** — automação de UI via Playwright CDP. Lê empresas de um Google Forms (via Google Sheets API + service account) ou CSV, navega pela estrutura de iframes do SOC (socframe → cadIFrame), abre a tela de Contatos (480) de cada empresa e preenche nome, telefone e e-mail. Detecta duplicatas via dialog nativo do browser. Não roda na VPS — depende de Chrome local já autenticado.
 
 ---
 

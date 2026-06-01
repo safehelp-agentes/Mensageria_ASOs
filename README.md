@@ -11,9 +11,9 @@
 
 # SafeWork — Automação de ASOs via WhatsApp
 
-**Plataforma completa de entrega de ASOs (Atestados de Saúde Ocupacional) via WhatsApp Business. Composta por dois módulos independentes: um pipeline automático diário e um bot de atendimento sob demanda — ambos integrados ao sistema legado SOC e ao Supabase.**
+**Plataforma completa de entrega de ASOs (Atestados de Saúde Ocupacional) via WhatsApp Business. Composta por três módulos independentes: um pipeline automático diário, um bot de atendimento sob demanda e uma automação de cadastro de contatos — todos integrados ao sistema legado SOC e ao Supabase.**
 
-[Configuração](#configuração) · [Pipeline](#pipeline-automático) · [Bot](#bot-de-atendimento) · [CRM](#crm) · [Deploy](#deploy)
+[Configuração](#configuração) · [Pipeline](#pipeline-automático) · [Bot](#bot-de-atendimento) · [Cadastro de Contatos](#cadastro-de-contatos) · [CRM](#crm) · [Deploy](#deploy)
 
 </div>
 
@@ -42,6 +42,16 @@ Este sistema resolve os dois lados:
 │      ├──► Supabase ──► dedup / estado / CRM                                 │
 │      │                                                                       │
 │      └──► Meta Cloud API ──► WhatsApp Business (1 template + N documentos)  │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────── CADASTRO DE CONTATOS (manual) ──────────────────┐
+│                                                                              │
+│  Google Forms ──► Google Sheets ──► cadastra_contatos.py                    │
+│                                            │                                │
+│                                  Playwright CDP (Chrome local)              │
+│                                            │                                │
+│                                    SOC Web UI (tela 337/480)                │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
 
@@ -118,6 +128,9 @@ python-dotenv   requests   cryptography   defusedxml
 
 # Bot (adicionais)
 fastapi   uvicorn   openai   pydantic
+
+# Cadastro de contatos (adicionais)
+playwright   gspread
 ```
 
 ---
@@ -298,6 +311,49 @@ O bot assume aquela empresa para toda a sessão, como se o número estivesse cad
 
 ---
 
+## Cadastro de Contatos
+
+Automação que lê respostas de um Google Forms (empresas que querem receber ASOs por WhatsApp) e cadastra o contato responsável diretamente na tela de Contatos do SOC via Playwright.
+
+**Não roda na VPS** — depende de um Chrome local já logado no SOC via CDP.
+
+### Pré-requisitos
+
+```bash
+pip install playwright gspread
+playwright install chromium
+```
+
+Abra o Chrome com a porta de debug e faça login no SOC manualmente:
+
+```
+chrome.exe --remote-debugging-port=9222 --user-data-dir="C:\chrome-soc"
+```
+
+Deixe na **tela de pesquisa de empresa (337)** antes de rodar o script.
+
+### Execução
+
+```bash
+# Lê do Google Sheets (Forms)
+python src/soc/cadastra_contatos.py --sheets
+
+# Lê de um CSV local
+python src/soc/cadastra_contatos.py caminho/para/planilha.csv
+
+# Padrão: lê de data/cadastro_contatos.csv
+python src/soc/cadastra_contatos.py
+```
+
+### Comportamento
+
+- Cadastra nome, telefone e e-mail do responsável na tela 480 (Contatos) do SOC
+- Detecta duplicatas via popup nativo do SOC e pula sem quebrar o lote
+- Isola falhas por empresa — erro em uma empresa não interrompe as demais
+- Gera screenshot de evidência em `evidencias_contatos/` para cada falha
+
+---
+
 ## CRM
 
 Interface web para monitorar conversas, ASOs enviados, empresas e métricas.
@@ -383,6 +439,23 @@ Todas as variáveis vivem no `.env`. Use `.env.example` como base.
 | `BOT_PORT` | não | Porta do serviço FastAPI. Padrão: `8001` |
 | `BOT_MODEL` | não | Modelo Groq. Padrão: `llama-3.3-70b-versatile` |
 
+### SOC — WebService ImportacaoEmpresa (SOAP)
+
+| Variável | Obrigatório | Descrição |
+|---|---|---|
+| `SOC_IMPORTACAO_EMPRESA_URL` | não | Endpoint do serviço. Padrão embutido: `https://ws1.soc.com.br/WSSoc/EmpresaWs` |
+| `SOC_CHAVE_IMPORTACAO_EMPRESA` | não | `chaveAcesso` para `identificacaoWsVo` (opcional conforme WSDL) |
+| `SOC_HOMOLOGACAO` | não | `true` para ambiente de homologação. Padrão: `false` |
+
+### Cadastro de Contatos (Playwright + Google Sheets)
+
+| Variável | Obrigatório | Descrição |
+|---|---|---|
+| `SOC_CDP_URL` | não | URL do Chrome com debug ativo. Padrão: `http://localhost:9222` |
+| `GOOGLE_CREDENTIALS_JSON` | sim (--sheets) | Caminho para o JSON da service account Google |
+| `GOOGLE_SHEETS_ID` | sim (--sheets) | ID da planilha Google Sheets conectada ao Forms |
+| `GOOGLE_SHEETS_GID` | sim (--sheets) | GID da aba com as respostas do Forms |
+
 ### Alertas por e-mail (opcional)
 
 | Variável | Descrição |
@@ -398,38 +471,40 @@ Todas as variáveis vivem no `.env`. Use `.env.example` como base.
 
 ```
 envio_ASO/
-├── main.py                  # Orquestrador do pipeline — 5 etapas numeradas
-├── config.py                # Carrega .env, expõe constantes tipadas
-├── build.py                 # Injeta credenciais Supabase no index.html
-├── index.html               # CRM completo single-file (sem build contínuo)
+├── main.py                        # Orquestrador do pipeline — 5 etapas numeradas
+├── config.py                      # Carrega .env, expõe constantes tipadas
+├── build.py                       # Injeta credenciais Supabase no index.html
+├── index.html                     # CRM completo single-file (sem build contínuo)
 │
-├── bot/                     # Bot de atendimento WhatsApp (FastAPI)
-│   ├── service.py           # App FastAPI — endpoint /bot/mensagem e /bot/health
-│   ├── handler.py           # Máquina de estados — orquestra o fluxo de conversa
-│   ├── tools.py             # Ferramentas SOC: buscar funcionários, ASOs, baixar PDF
-│   ├── llm.py               # Interpretação de linguagem natural via Groq
-│   └── state.py             # Persistência de estado das conversas no Supabase
+├── bot/                           # Bot de atendimento WhatsApp (FastAPI)
+│   ├── service.py                 # App FastAPI — endpoint /bot/mensagem e /bot/health
+│   ├── handler.py                 # Máquina de estados — orquestra o fluxo de conversa
+│   ├── tools.py                   # Ferramentas SOC: buscar funcionários, ASOs, baixar PDF
+│   ├── llm.py                     # Interpretação de linguagem natural via Groq
+│   └── state.py                   # Persistência de estado das conversas no Supabase
 │
 └── src/
     ├── soc/
-    │   ├── api.py           # Cliente REST Exporta Dados (empresas, GED, contatos)
-    │   └── downloader.py    # Cliente SOAP WS-Security + parser MTOM multipart
+    │   ├── api.py                 # Cliente REST Exporta Dados (empresas, GED, contatos)
+    │   ├── downloader.py          # Cliente SOAP WS-Security + parser MTOM multipart
+    │   ├── empresa.py             # SOAP alterarEmpresa — atualiza dados cadastrais no SOC
+    │   └── cadastra_contatos.py   # Playwright CDP — cadastra contatos via UI web do SOC
     │
     ├── meta/
-    │   └── whatsapp.py      # Upload PDF + template + documentos (1 conversa/empresa)
+    │   └── whatsapp.py            # Upload PDF + template + documentos (1 conversa/empresa)
     │
     ├── pipeline/
-    │   └── processor.py     # Coleta em lote, download, extração ZIP, agrupamento
+    │   └── processor.py           # Coleta em lote, download, extração ZIP, agrupamento
     │
     ├── state/
-    │   └── manager.py       # Chave de identidade ASO, deduplicação
+    │   └── manager.py             # Chave de identidade ASO, deduplicação
     │
     ├── integrations/
-    │   ├── supabase.py      # PostgREST — upsert empresas, ASOs, mensagens
-    │   └── email.py         # Relatório de erros via SMTP Gmail
+    │   ├── supabase.py            # PostgREST — upsert empresas, ASOs, mensagens
+    │   └── email.py               # Relatório de erros via SMTP Gmail
     │
     └── utils/
-        └── helpers.py       # Retry com backoff, sanitização, detecção PDF/ZIP
+        └── helpers.py             # Retry com backoff, sanitização, detecção PDF/ZIP
 ```
 
 ---
@@ -502,6 +577,9 @@ Detalhes completos em [SECURITY.md](SECURITY.md).
 | Bot: `193037: 0 ASO(s)` nos logs | Empresa errada no parâmetro da API | O bot tenta empresa principal e empresa cliente automaticamente; verificar logs `[BOT] 193037 tentativa` |
 | CRM: `Build OK` mas dados não aparecem | `SUPABASE_ANON_KEY` está com a `service_role` key | Usar a chave `anon/public` (diferente da service_role) |
 | Mensagens inbound não aparecem no CRM | `phone_number_id` divergente entre Meta e n8n | Conferir nos logs do n8n |
+| Cadastro: `iframe 'socframe' não encontrado` | SOC não está aberto no Chrome CDP | Abrir Chrome com `--remote-debugging-port=9222`, logar no SOC e deixar na tela 337 |
+| Cadastro: `PermissionError` no Google Sheets | Planilha não compartilhada com a service account | Compartilhar com o email do JSON como Leitor |
+| Cadastro: `GOOGLE_SHEETS_ID não definido` | Variável ausente no `.env` | Adicionar `GOOGLE_SHEETS_ID` ao `.env` |
 
 ---
 

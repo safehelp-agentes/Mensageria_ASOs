@@ -44,7 +44,7 @@ DIR_EVIDENCIAS = Path(os.getenv("SOC_DIR_EVIDENCIAS", "evidencias_contatos"))
 
 # True  → lê do Google Sheets (Forms)
 # False → lê do CSV local
-USAR_SHEETS = False
+USAR_SHEETS = True
 
 GOOGLE_CREDENTIALS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON", "")
 GOOGLE_SHEETS_ID        = os.getenv("GOOGLE_SHEETS_ID", "")
@@ -155,7 +155,9 @@ def ler_google_sheets() -> list[EmpresaContatos]:
     logger.info("Conectando ao Google Sheets (id=%s gid=%d)...", GOOGLE_SHEETS_ID, GOOGLE_SHEETS_GID)
     gc     = gspread.service_account(filename=str(path))
     aba    = gc.open_by_key(GOOGLE_SHEETS_ID).get_worksheet_by_id(GOOGLE_SHEETS_GID)
-    linhas = aba.get_all_records()
+    # numericise_ignore=['all'] impede que gspread converta valores numéricos para int/float,
+    # evitando perda de zeros à esquerda em CNPJs (ex: 01311443000166 → 1311443000166).
+    linhas = aba.get_all_records(numericise_ignore=["all"])
     logger.info("Google Sheets: %d linha(s) carregada(s).", len(linhas))
     return _processar_linhas(linhas, "Google Sheets")
 
@@ -244,6 +246,11 @@ def _preencher_contato(page: Page, frame: Frame, contato: Contato) -> str:
     frame.fill("#tel1", contato.telefone1)
     frame.fill("#email1", contato.email1)
 
+    # Seleciona o perfil "Perfil de Contato de Empresas Clientes Safework" (value=3)
+    # e clica na seta verde para associar — sem isso o exporter 193815 não retorna o contato.
+    frame.select_option("#perfil", value="3")
+    frame.click("a[href=\"javascript:associar('perfil','perfilSelecionado');\"]")
+
     _msgs: list[str] = []
 
     def _on_dialog(dialog) -> None:
@@ -253,7 +260,7 @@ def _preencher_contato(page: Page, frame: Frame, contato: Contato) -> str:
     page.on("dialog", _on_dialog)
     logger.info("[contato] Salvando...")
     frame.click("a[href=\"javascript:doAcao('save');\"]")
-    page.wait_for_timeout(1500)
+    page.wait_for_timeout(1000)
     page.remove_listener("dialog", _on_dialog)
 
     if _msgs:

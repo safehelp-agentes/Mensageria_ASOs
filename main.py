@@ -63,34 +63,43 @@ def _processar_grupo_empresas(grupos: dict, data_referencia: str, config_empresa
         print(f"\n[{idx}/{len(grupos)}] Empresa {codigo_empresa} - {nome_empresa}")
         print(f"  ASOs: {len(regs_empresa)}")
 
-        resultado = baixar_pdfs_empresa(codigo_empresa, regs_empresa)
-
+        # ── Resolve contato ANTES de baixar PDFs ──────────────────────────────
+        # Só processa empresas que tenham um contato com nome "ASO -" cadastrado.
         contatos          = buscar_contatos_empresa(codigo_empresa)
         contato_escolhido = extrair_primeiro_numero_contato(contatos)
         numero_empresa    = contato_escolhido["numero"]
 
-        cfg_emp             = config_empresas.get(codigo_empresa, {})
-        telefone_escolhido  = cfg_emp.get("telefone_escolhido", "") or ""
+        cfg_emp            = config_empresas.get(codigo_empresa, {})
+        telefone_escolhido = cfg_emp.get("telefone_escolhido", "") or ""
         if telefone_escolhido:
             if numero_parece_valido(telefone_escolhido):
                 numero_empresa = normalizar_numero_whatsapp(telefone_escolhido)
                 print(f"  Usando telefone escolhido (CRM): {numero_empresa}")
             else:
-                registrar_erro(f"Empresa {codigo_empresa}: telefone_escolhido '{telefone_escolhido}' inválido — forçando número de teste")
-                print(f"  AVISO: telefone escolhido inválido ({telefone_escolhido}) → número de teste")
+                registrar_erro(f"Empresa {codigo_empresa}: telefone_escolhido '{telefone_escolhido}' inválido")
+                print(f"  AVISO: telefone escolhido inválido ({telefone_escolhido})")
                 numero_empresa = ""
 
-        numero_destino    = resolver_destino_envio(numero_empresa)
+        if not numero_empresa:
+            print(f"  AVISO: nenhum contato com número válido cadastrado. Empresa ignorada.")
+            registrar_erro(f"Empresa {codigo_empresa} sem contato com número válido — ignorada pelo pipeline")
+            resumo.append({
+                "empresa": codigo_empresa, "nome_empresa": nome_empresa,
+                "downloads_ok": 0, "erros": 0, "meta_enviado": False,
+                "meta_erro": "Sem contato ASO - válido",
+            })
+            continue
 
-        if not numero_empresa and not telefone_escolhido:
-            registrar_erro(f"Empresa {codigo_empresa} sem telefone válido")
+        resultado = baixar_pdfs_empresa(codigo_empresa, regs_empresa)
+
+        numero_destino = resolver_destino_envio(numero_empresa)
 
         resultado.update({
             "numero_empresa_coletado":  numero_empresa,
             "numero_destino_utilizado": numero_destino,
             "contato_encontrado":       contato_escolhido["contato"],
             "origem_numero":            contato_escolhido["origem"],
-            "erro_contato":             None if numero_empresa else "Nenhum telefone válido",
+            "erro_contato":             None,
         })
 
         upsert_empresa(

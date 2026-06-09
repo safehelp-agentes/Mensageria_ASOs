@@ -152,6 +152,9 @@ def buscar_contatos_empresa(codigo_empresa_cliente: str) -> list:
 
 
 def extrair_primeiro_numero_contato(contatos: list) -> dict:
+    """
+    Retorna o telefone do primeiro contato da empresa que tenha número de WhatsApp válido.
+    """
     for contato in contatos:
         segundo  = contato.get("segundoTelefone", "")
         primeiro = contato.get("primeiroTelefone", "")
@@ -161,4 +164,4 @@ def extrair_primeiro_numero_contato(contatos: list) -> dict:
         if numero_parece_valido(primeiro):
             return {"numero": normalizar_numero_whatsapp(primeiro), "origem": "primeiroTelefone", "contato": contato}
 
-    return {"numero": "", "origem": "", "contato": None}
+    return {"numero": "", "origem": "", "contato": None, "sem_contato_aso": True}

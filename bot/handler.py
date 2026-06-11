@@ -1,5 +1,6 @@
 import os
 import re
+from datetime import datetime, timezone, timedelta
 
 from bot import llm, tools, state
 from src.meta.whatsapp import enviar_texto_meta
@@ -21,6 +22,24 @@ _MSG_MENU = (
 )
 
 _RE_NUMERO = re.compile(r'^\s*(\d+)\s*$')
+
+_TTL_CONVERSA_HORAS = 4
+
+_RE_ESCAPE = re.compile(
+    r'^\s*(menu|cancelar|voltar|inicio|início|reiniciar|sair|parar|oi|ol[aá])\s*$',
+    re.IGNORECASE
+)
+
+
+def _estado_expirado(estado: dict) -> bool:
+    updated = estado.get("updated_at", "")
+    if not updated:
+        return False
+    try:
+        dt = datetime.fromisoformat(updated.replace("Z", "+00:00"))
+        return datetime.now(timezone.utc) - dt > timedelta(hours=_TTL_CONVERSA_HORAS)
+    except Exception:
+        return False
 
 
 _WA_MAX_CHARS = 4096
@@ -351,6 +370,19 @@ def processar_mensagem(numero: str, mensagem: str, wamid: str = "", timestamp: i
     fase   = (estado or {}).get("fase", "livre")
     cod    = (estado or {}).get("codigo_empresa", "")
     print(f"[BOT] fase={fase!r} | empresa={cod!r}")
+
+    # TTL: reseta conversa se ficou parada por mais de _TTL_CONVERSA_HORAS
+    if estado and fase != "livre" and _estado_expirado(estado):
+        print(f"[BOT] Conversa expirada ({_TTL_CONVERSA_HORAS}h) — resetando estado")
+        state.resetar_estado(numero)
+        estado, fase = None, "livre"
+
+    # Escape global: qualquer fase ativa volta ao menu com palavras-chave
+    if estado and fase not in ("livre",) and _RE_ESCAPE.match(mensagem.strip()):
+        print(f"[BOT] Escape global acionado — voltando ao menu")
+        _enviar(numero, _MSG_MENU, cod)
+        state.salvar_estado(numero, fase="menu_principal", codigo_empresa=cod)
+        return
 
     # Se ainda não há empresa associada ao número, valida no SOC
     if not cod:

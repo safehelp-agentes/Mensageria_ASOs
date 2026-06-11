@@ -34,6 +34,9 @@ def chamar_exporta_dados(parametro: dict, timeout: int = 60):
     if texto.lower() in {"sem resultado.", "sem resultado"}:
         return []
 
+    if texto and not texto.startswith(("{", "[")):
+        raise RuntimeError(f"Erro SOC: {texto}")
+
     try:
         data = response.json()
     except Exception as e:

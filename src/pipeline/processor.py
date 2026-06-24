@@ -12,7 +12,7 @@ from config import (
 from src.utils.helpers import sanitizar_nome, registrar_erro
 from src.soc.api import buscar_empresas, buscar_asos_empresa, buscar_contatos_empresa, extrair_primeiro_numero_contato
 from src.soc.downloader import baixar_documento
-from src.integrations.supabase import sincronizar_empresas_soc, upsert_empresa
+from src.integrations.supabase import buscar_dados_empresas, upsert_empresa
 
 
 def _montar_nome_arquivo_saida(nome_base: str, tipo: str) -> str:
@@ -20,36 +20,59 @@ def _montar_nome_arquivo_saida(nome_base: str, tipo: str) -> str:
     return f"{nome_base}.{tipo}" if tipo in ("pdf", "zip") else f"{nome_base}.bin"
 
 
-def _atualizar_telefone_bloqueadas(empresas: list, bloqueadas: set) -> None:
-    """Atualiza telefone no Supabase para empresas bloqueadas (nunca processadas no fluxo normal)."""
-    if not bloqueadas:
-        return
-    for emp in empresas:
+def _sincronizar_empresas_completo(empresas_soc: list, dados_supabase: dict) -> None:
+    """
+    Sincroniza todas as empresas do SOC com o Supabase.
+    - nome/cnpj: atualiza se diferente do registrado
+    - telefone: busca no SOC apenas quando o Supabase não tem valor (evita chamadas desnecessárias)
+    Não toca em telefone_escolhido nem bloqueada — esses campos são exclusivos do CRM.
+    """
+    atualizadas = sem_tel_resolvidas = 0
+
+    for emp in empresas_soc:
         codigo = str(emp.get("CODIGO", "")).strip()
-        if codigo not in bloqueadas:
+        if not codigo:
             continue
-        try:
-            contatos = buscar_contatos_empresa(codigo)
-            numero   = extrair_primeiro_numero_contato(contatos)["numero"]
-            upsert_empresa(
-                codigo   = codigo,
-                nome     = (emp.get("RAZAOSOCIAL") or emp.get("NOMEABREVIADO") or "").strip(),
-                cnpj     = str(emp.get("CNPJ", "")).strip(),
-                telefone = numero,
-            )
-        except Exception as e:
-            registrar_erro(f"Erro ao atualizar telefone empresa bloqueada {codigo}: {e}")
+
+        nome_soc = (emp.get("RAZAOSOCIAL") or emp.get("NOMEABREVIADO") or "").strip()
+        cnpj_soc = str(emp.get("CNPJ", "")).strip()
+
+        dados    = dados_supabase.get(codigo, {})
+        nome_db  = dados.get("nome", "")
+        cnpj_db  = dados.get("cnpj", "")
+        tel_db   = dados.get("telefone", "")
+
+        telefone_novo = tel_db
+        if not tel_db:
+            try:
+                contatos  = buscar_contatos_empresa(codigo)
+                tel_soc   = extrair_primeiro_numero_contato(contatos).get("numero", "")
+                if tel_soc:
+                    telefone_novo = tel_soc
+                    sem_tel_resolvidas += 1
+            except Exception as e:
+                registrar_erro(f"Erro ao buscar contato empresa {codigo}: {e}")
+
+        if nome_soc != nome_db or cnpj_soc != cnpj_db or telefone_novo != tel_db:
+            upsert_empresa(codigo=codigo, nome=nome_soc, cnpj=cnpj_soc, telefone=telefone_novo)
+            atualizadas += 1
+
+    print(f"[SUPABASE] Empresas verificadas: {len(empresas_soc)} | Atualizadas: {atualizadas} | Telefones preenchidos: {sem_tel_resolvidas}")
 
 
-def coletar_asos_por_data(data_inicio: str, data_fim: str, empresas_bloqueadas: set = None) -> list:
+def coletar_asos_por_data(data_inicio: str, data_fim: str, empresas_bloqueadas: set = None, dados_supabase: dict = None) -> list:
     """Busca ASOs de todas as empresas no intervalo [data_inicio, data_fim] (DD/MM/YYYY).
     Empresas em empresas_bloqueadas são ignoradas antes de qualquer consulta ao SOC.
+    dados_supabase: dict retornado por buscar_dados_empresas(); se None, é buscado internamente.
     """
     empresas_bloqueadas = empresas_bloqueadas or set()
 
     empresas = buscar_empresas()
-    sincronizar_empresas_soc(empresas)
-    _atualizar_telefone_bloqueadas(empresas, empresas_bloqueadas)
+
+    if dados_supabase is None:
+        dados_supabase = buscar_dados_empresas()
+
+    _sincronizar_empresas_completo(empresas, dados_supabase)
 
     empresas_ativas = [
         emp for emp in empresas

@@ -275,6 +275,37 @@ def buscar_config_empresas() -> dict:
         return {}
 
 
+def buscar_dados_empresas() -> dict:
+    """Retorna {codigo: {nome, cnpj, telefone, bloqueada, telefone_escolhido}} para todas as empresas."""
+    if not SUPABASE_ATIVO:
+        return {}
+    try:
+        resp = _requisicao_com_retry(
+            requests.get,
+            _url("empresas"),
+            headers=_headers_write(),
+            params={"select": "codigo,nome,cnpj,telefone,bloqueada,telefone_escolhido"},
+            timeout=15,
+        )
+        if resp.status_code >= 300:
+            print(f"[SUPABASE] Erro buscar dados empresas: {resp.text[:200]}")
+            return {}
+        return {
+            row["codigo"]: {
+                "nome":               (row.get("nome") or "").strip(),
+                "cnpj":               (row.get("cnpj") or "").strip(),
+                "telefone":           (row.get("telefone") or "").strip(),
+                "bloqueada":          bool(row.get("bloqueada", False)),
+                "telefone_escolhido": (row.get("telefone_escolhido") or "").strip(),
+            }
+            for row in resp.json()
+            if row.get("codigo")
+        }
+    except Exception as e:
+        print(f"[SUPABASE] Erro buscar dados empresas: {e}")
+        return {}
+
+
 # ── Mensagens outbound ────────────────────────────────────
 
 def registrar_mensagem_outbound(

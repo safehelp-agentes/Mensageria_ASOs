@@ -34,7 +34,7 @@ from src.integrations.supabase import (
     registrar_mensagem_outbound,
     salvar_aso_pendente,
     buscar_asos_pendentes,
-    buscar_config_empresas,
+    buscar_dados_empresas,
     verificar_conectividade,
 )
 
@@ -214,10 +214,10 @@ def main(usar_ontem: bool = False, data_especifica: str | None = None):
     for pasta in (PASTA_TEMP, PASTA_DEBUG, PASTA_SAIDA_LISTAGEM):
         os.makedirs(pasta, exist_ok=True)
 
-    # ── 1. Busca ASOs já enviados, pendentes e config de empresas no Supabase ──
+    # ── 1. Busca ASOs já enviados, pendentes e dados de empresas no Supabase ───
     chaves_enviadas  = buscar_chaves_enviadas()
     pendentes        = buscar_asos_pendentes()
-    config_empresas  = buscar_config_empresas()
+    config_empresas  = buscar_dados_empresas()
     bloqueadas       = {cod for cod, c in config_empresas.items() if c.get("bloqueada")}
     print(f"\nASOs já enviados (Supabase):  {len(chaves_enviadas)}")
     print(f"ASOs pendentes (não enviados): {len(pendentes)}")
@@ -228,7 +228,7 @@ def main(usar_ontem: bool = False, data_especifica: str | None = None):
     dt_fim      = datetime.strptime(data_fim, "%d/%m/%Y")
     data_inicio = (dt_fim - timedelta(days=JANELA_DIAS)).strftime("%d/%m/%Y")
 
-    registros_todos = coletar_asos_por_data(data_inicio, data_fim, bloqueadas)
+    registros_todos = coletar_asos_por_data(data_inicio, data_fim, bloqueadas, config_empresas)
     caminho_json    = salvar_listagem_asos(registros_todos, data_fim)
     print(f"\nListagem salva em: {caminho_json}")
     print(f"Total de registros do SOC: {len(registros_todos)}")

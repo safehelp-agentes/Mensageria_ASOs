@@ -297,6 +297,11 @@ input,textarea{font-family:inherit}
 }
 .data-table tbody tr:last-child td{border-bottom:none}
 .data-table tbody tr:hover td{background:var(--ink-50)}
+.data-table th.th-sortable{cursor:pointer;user-select:none}
+.data-table th.th-sortable:hover{color:var(--ink-700);background:var(--ink-100)}
+.data-table th.th-sortable::after{content:'↕';display:inline-block;margin-left:5px;opacity:.22;font-size:9px}
+.data-table th.th-sort-asc::after{content:'▲';opacity:1;color:var(--accent)}
+.data-table th.th-sort-desc::after{content:'▼';opacity:1;color:var(--accent)}
 .td-mono{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:11px;color:var(--ink-400)}
 .td-trunc{max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
@@ -772,12 +777,12 @@ input,textarea{font-family:inherit}
       <table class="data-table">
         <thead>
           <tr>
-            <th>Código</th>
-            <th>Empresa</th>
-            <th>CNPJ</th>
-            <th>Tel. SOC</th>
-            <th>Tel. Escolhido</th>
-            <th>Status</th>
+            <th class="th-sortable" data-col="codigo"            onclick="setEmpSort('codigo')">Código</th>
+            <th class="th-sortable" data-col="nome"              onclick="setEmpSort('nome')">Empresa</th>
+            <th class="th-sortable" data-col="cnpj"              onclick="setEmpSort('cnpj')">CNPJ</th>
+            <th class="th-sortable" data-col="telefone"          onclick="setEmpSort('telefone')">Tel. SOC</th>
+            <th class="th-sortable" data-col="telefone_escolhido" onclick="setEmpSort('telefone_escolhido')">Tel. Escolhido</th>
+            <th class="th-sortable" data-col="bloqueada"         onclick="setEmpSort('bloqueada')">Status</th>
           </tr>
         </thead>
         <tbody id="emp-tbody">
@@ -1109,6 +1114,8 @@ async function carregarEmpresasPainel() {
 
 let empFiltroStatus = 'todos';
 let empFiltroTel    = 'todos';
+let empSortCol      = null;
+let empSortDir      = 'asc';
 
 function setEmpFiltro(val) {
   empFiltroStatus = val;
@@ -1124,6 +1131,16 @@ function setEmpFiltroTel(val) {
   renderEmpresas();
 }
 
+function setEmpSort(col) {
+  if (empSortCol === col) {
+    empSortDir = empSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    empSortCol = col;
+    empSortDir = 'asc';
+  }
+  renderEmpresas();
+}
+
 function renderEmpresas() {
   const q = (document.getElementById('emp-search')?.value || '').toLowerCase().trim();
   let lista = todasEmpresas;
@@ -1135,6 +1152,17 @@ function renderEmpresas() {
     (e.nome  ||'').toLowerCase().includes(q) ||
     (e.codigo||'').toLowerCase().includes(q) ||
     (e.cnpj  ||'').toLowerCase().includes(q));
+
+  if (empSortCol) {
+    lista = [...lista].sort((a, b) => {
+      let av = a[empSortCol], bv = b[empSortCol];
+      if (empSortCol === 'bloqueada') { av = av ? 1 : 0; bv = bv ? 1 : 0; }
+      else { av = (av || '').toString().toLowerCase(); bv = (bv || '').toString().toLowerCase(); }
+      if (av < bv) return empSortDir === 'asc' ? -1 : 1;
+      if (av > bv) return empSortDir === 'asc' ?  1 : -1;
+      return 0;
+    });
+  }
 
   const countEl = document.getElementById('emp-count');
   if (countEl) countEl.textContent = `${lista.length} empresa${lista.length !== 1 ? 's' : ''}`;
@@ -1184,6 +1212,12 @@ function renderEmpresas() {
         </td>
       </tr>`;
   }).join('');
+
+  document.querySelectorAll('#panel-empresas .data-table th[data-col]').forEach(th => {
+    th.classList.remove('th-sort-asc', 'th-sort-desc');
+    if (th.dataset.col === empSortCol)
+      th.classList.add(empSortDir === 'asc' ? 'th-sort-asc' : 'th-sort-desc');
+  });
 }
 
 async function toggleBloqueada(codigo, bloquear) {

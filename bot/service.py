@@ -8,10 +8,13 @@ if _ROOT not in sys.path:
 from dotenv import load_dotenv
 load_dotenv(os.path.join(_ROOT, ".env"))
 
-from fastapi import FastAPI, BackgroundTasks
+from fastapi import FastAPI, BackgroundTasks, Request, Response
 from pydantic import BaseModel
 
 from bot import handler
+from src.integrations import chatwoot as _chatwoot
+
+_CHATWOOT_WEBHOOK_TOKEN = os.getenv("CHATWOOT_WEBHOOK_TOKEN", "").strip()
 
 app = FastAPI(title="SafeWork Bot", version="1.0")
 
@@ -64,3 +67,60 @@ async def receber_mensagem(msg: MensagemEntrada, background_tasks: BackgroundTas
 @app.get("/bot/health")
 async def health():
     return {"status": "ok", "bot_ativo": _BOT_ATIVO}
+
+
+# ── Webhook Chatwoot (agente humano responde no Chatwoot → envia ao WhatsApp) ──
+
+def _enviar_resposta_agente(phone: str, content: str):
+    from src.meta.whatsapp import enviar_texto_meta
+    from bot.state import registrar_mensagem_bot
+    try:
+        enviar_texto_meta(phone, content)
+        registrar_mensagem_bot(phone, content, tipo="agente")
+        print(f"[CHATWOOT] Agente → {phone}: {content[:80]}")
+    except Exception as e:
+        print(f"[CHATWOOT] Erro ao encaminhar resposta do agente: {e}")
+
+
+@app.post("/chatwoot/webhook")
+async def chatwoot_webhook(request: Request, background_tasks: BackgroundTasks, token: str = ""):
+    # Verificação de token (configura CHATWOOT_WEBHOOK_TOKEN no .env e na URL do webhook)
+    if _CHATWOOT_WEBHOOK_TOKEN and token != _CHATWOOT_WEBHOOK_TOKEN:
+        return Response(status_code=401)
+
+    try:
+        data = await request.json()
+    except Exception:
+        return Response(status_code=400)
+
+    if data.get("event") != "message_created":
+        return {"status": "ignored"}
+
+    if data.get("message_type") != "outgoing":
+        return {"status": "ignored"}
+
+    msg_id = data.get("id", 0)
+
+    # Mensagem criada pelo próprio bot — ignora para não criar loop
+    if _chatwoot.is_bot_message(msg_id):
+        _chatwoot.consume_bot_message(msg_id)
+        return {"status": "ignored_echo"}
+
+    phone = (
+        data.get("conversation", {})
+            .get("meta", {})
+            .get("sender", {})
+            .get("phone_number", "")
+    )
+    if not phone:
+        return {"status": "no_phone"}
+
+    content = (data.get("content") or "").strip()
+    if not content:
+        return {"status": "no_content"}
+
+    # Remove o + para o formato esperado pelo Meta
+    phone_meta = phone.lstrip("+")
+
+    background_tasks.add_task(_enviar_resposta_agente, phone_meta, content)
+    return {"status": "queued"}

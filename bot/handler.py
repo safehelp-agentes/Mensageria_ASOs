@@ -4,6 +4,7 @@ from datetime import datetime, timezone, timedelta
 
 from bot import llm, tools, state
 from src.meta.whatsapp import enviar_texto_meta
+from src.integrations import chatwoot as _chatwoot
 
 _NUMEROS_TESTE: set[str] = {
     n.strip() for n in os.getenv("BOT_NUMEROS_TESTE", "").split(",") if n.strip()
@@ -50,6 +51,7 @@ def _enviar(numero: str, texto: str, cod_empresa: str = ""):
     if len(texto) <= _WA_MAX_CHARS:
         enviar_texto_meta(numero, texto)
         state.registrar_mensagem_bot(numero, texto, cod_empresa)
+        _chatwoot.espelhar_outbound(numero, texto)
         return
 
     # Divide por linhas sem cortar no meio de uma linha
@@ -60,11 +62,13 @@ def _enviar(numero: str, texto: str, cod_empresa: str = ""):
             if parte:
                 enviar_texto_meta(numero, parte.rstrip())
                 state.registrar_mensagem_bot(numero, parte.rstrip(), cod_empresa)
+                _chatwoot.espelhar_outbound(numero, parte.rstrip())
                 parte = ""
         parte += linha
     if parte.strip():
         enviar_texto_meta(numero, parte.rstrip())
         state.registrar_mensagem_bot(numero, parte.rstrip(), cod_empresa)
+        _chatwoot.espelhar_outbound(numero, parte.rstrip())
 
 
 def _extrair_numero(mensagem: str) -> int | None:
@@ -362,6 +366,8 @@ def _fase_aguardando_aso(numero: str, mensagem: str, estado: dict):
 
 def processar_mensagem(numero: str, mensagem: str, wamid: str = "", timestamp: int = None):
     print(f"[BOT] {numero}: {mensagem[:80]}")
+
+    _chatwoot.espelhar_inbound(numero, mensagem)
 
     if _interceptar_comando_teste(numero, mensagem):
         return

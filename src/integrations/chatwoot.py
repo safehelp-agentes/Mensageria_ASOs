@@ -105,13 +105,17 @@ def _conversation_for(phone: str) -> int | None:
 
 # ── Mensagens ──────────────────────────────────────────────────────────────────
 
-def _post_message(conv_id: int, content: str, message_type: str) -> int | None:
+def _post_message(conv_id: int, content: str, message_type: str,
+                   private: bool = False, additional_attributes: dict | None = None) -> int | None:
     """Cria mensagem no Chatwoot e retorna o ID gerado."""
     try:
+        payload = {"content": content, "message_type": message_type, "private": private}
+        if additional_attributes:
+            payload["additional_attributes"] = additional_attributes
         resp = _session.post(
             _api(f"/conversations/{conv_id}/messages"),
             headers=_headers(),
-            json={"content": content, "message_type": message_type, "private": False},
+            json=payload,
             timeout=_TIMEOUT,
         )
         if resp.status_code in (200, 201):
@@ -151,6 +155,23 @@ def espelhar_outbound(phone: str, content: str) -> None:
                 _bot_message_ids.clear()
     except Exception as e:
         print(f"[CHATWOOT] Erro ao espelhar outbound: {e}")
+
+
+def espelhar_envio_sistema(phone: str, content: str) -> None:
+    """
+    Registra no Chatwoot uma mensagem enviada automaticamente pelo pipeline de ASOs.
+    Aparece como mensagem enviada real na conversa (visível para os agentes como histórico).
+    O additional_attributes marca a origem para que o bot service não reencaminhe ao WhatsApp.
+    """
+    if not _ok():
+        return
+    try:
+        conv_id = _conversation_for(phone)
+        if conv_id:
+            _post_message(conv_id, content, "outgoing",
+                          additional_attributes={"source": "safework_pipeline"})
+    except Exception as e:
+        print(f"[CHATWOOT] Erro ao registrar envio sistema: {e}")
 
 
 # ── Prevenção de loop ──────────────────────────────────────────────────────────

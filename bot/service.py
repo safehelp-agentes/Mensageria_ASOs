@@ -102,6 +102,10 @@ async def chatwoot_webhook(request: Request, background_tasks: BackgroundTasks, 
     if data.get("message_type") != "outgoing":
         return {"status": "ignored"}
 
+    # Mensagens criadas pelo pipeline (envio automático de ASOs) — não reencaminhar ao WhatsApp
+    if (data.get("additional_attributes") or {}).get("source") == "safework_pipeline":
+        return {"status": "ignored"}
+
     msg_id = data.get("id", 0)
 
     # Mensagem criada pelo próprio bot — ignora para não criar loop

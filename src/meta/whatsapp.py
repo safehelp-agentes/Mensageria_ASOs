@@ -3,6 +3,7 @@ import time
 import requests
 from datetime import datetime, timedelta
 
+from src.integrations import chatwoot as _chatwoot
 from config import (
     META_WA_TOKEN, META_PHONE_NUMBER_ID, META_TEMPLATE_NAME,
     META_NUMERO_TESTE, META_TIMEOUT, META_API_VERSION,
@@ -239,6 +240,15 @@ def enviar_pdfs_empresa_meta(resultado: dict, numero_destino: str) -> dict:
             })
             enviados_erro += 1
             registrar_erro(f"[META] Erro ao enviar {nome_arquivo} para {numero_destino}: {e}")
+
+    if enviados_ok > 0:
+        nomes_pdfs = "\n".join(
+            f"  - {r['arquivo']}" for r in respostas if r["sucesso"]
+        )
+        _chatwoot.espelhar_envio_sistema(
+            numero_destino,
+            f"[ASO enviado] {nome_empresa} ({data_emissao})\n{nomes_pdfs}",
+        )
 
     return {
         "empresa":       nome_empresa,

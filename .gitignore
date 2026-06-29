@@ -64,3 +64,5 @@ testes/*
 teste.txt
 *.tmp
 temp/
+
+.env.chatwoot

@@ -48,6 +48,9 @@ class MensagemEntrada(BaseModel):
 
 @app.post("/bot/mensagem")
 async def receber_mensagem(msg: MensagemEntrada, background_tasks: BackgroundTasks):
+    # Espelha no Chatwoot independente do estado do bot
+    background_tasks.add_task(_chatwoot.espelhar_inbound, msg.numero, msg.mensagem)
+
     if not _BOT_ATIVO:
         return {"status": "bot_inativo"}
 

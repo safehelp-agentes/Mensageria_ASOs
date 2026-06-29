@@ -1,5 +1,9 @@
 import os
+import warnings
 import requests
+import urllib3
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 _BASE_URL    = os.getenv("CHATWOOT_BASE_URL", "").strip().rstrip("/")
 _API_TOKEN   = os.getenv("CHATWOOT_API_TOKEN", "").strip()
@@ -7,6 +11,9 @@ _ACCOUNT_ID  = os.getenv("CHATWOOT_ACCOUNT_ID", "1").strip()
 _INBOX_ID    = int(os.getenv("CHATWOOT_INBOX_ID", "0") or 0)
 _ATIVO       = os.getenv("CHATWOOT_ATIVO", "false").strip().lower() == "true"
 _TIMEOUT     = 10
+
+_session = requests.Session()
+_session.verify = False
 
 # IDs de mensagens criadas pelo bot — evita reencaminhar ao WhatsApp mensagens
 # que o bot já enviou (elas são espelhadas no Chatwoot mas NÃO devem ser reenviadas).
@@ -31,21 +38,22 @@ def _get_or_create_contact(phone: str, name: str = "") -> int | None:
     phone_fmt = phone if phone.startswith("+") else f"+{phone}"
 
     try:
-        resp = requests.get(
+        resp = _session.get(
             _api("/contacts/search"),
             headers=_headers(),
             params={"q": phone_fmt, "include_contacts": True},
             timeout=_TIMEOUT,
         )
         if resp.ok:
-            results = resp.json().get("payload", {}).get("contacts", [])
+            payload = resp.json().get("payload", [])
+            results = payload if isinstance(payload, list) else payload.get("contacts", [])
             if results:
                 return results[0]["id"]
     except Exception as e:
         print(f"[CHATWOOT] Erro ao buscar contato: {e}")
 
     try:
-        resp = requests.post(
+        resp = _session.post(
             _api("/contacts"),
             headers=_headers(),
             json={"phone_number": phone_fmt, "name": name or phone_fmt},
@@ -61,7 +69,7 @@ def _get_or_create_contact(phone: str, name: str = "") -> int | None:
 
 def _get_or_create_conversation(contact_id: int) -> int | None:
     try:
-        resp = requests.get(
+        resp = _session.get(
             _api(f"/contacts/{contact_id}/conversations"),
             headers=_headers(),
             timeout=_TIMEOUT,
@@ -74,7 +82,7 @@ def _get_or_create_conversation(contact_id: int) -> int | None:
         print(f"[CHATWOOT] Erro ao buscar conversas: {e}")
 
     try:
-        resp = requests.post(
+        resp = _session.post(
             _api("/conversations"),
             headers=_headers(),
             json={"inbox_id": _INBOX_ID, "contact_id": contact_id},
@@ -100,7 +108,7 @@ def _conversation_for(phone: str) -> int | None:
 def _post_message(conv_id: int, content: str, message_type: str) -> int | None:
     """Cria mensagem no Chatwoot e retorna o ID gerado."""
     try:
-        resp = requests.post(
+        resp = _session.post(
             _api(f"/conversations/{conv_id}/messages"),
             headers=_headers(),
             json={"content": content, "message_type": message_type, "private": False},

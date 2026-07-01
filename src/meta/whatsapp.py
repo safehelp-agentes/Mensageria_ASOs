@@ -141,8 +141,12 @@ def _enviar_documento_simples(numero: str, media_id: str, nome_arquivo: str) -> 
     return resp.json()
 
 
-def enviar_texto_meta(numero: str, mensagem: str) -> dict:
-    """Envia mensagem de texto simples."""
+def enviar_texto_meta(numero: str, mensagem: str, chatwoot_mirror: bool = True) -> dict:
+    """Envia mensagem de texto simples.
+
+    chatwoot_mirror=False quando o texto já está no Chatwoot (ex: resposta de agente humano)
+    para não criar mensagem duplicada na conversa.
+    """
     _validar_config()
 
     payload = {
@@ -160,6 +164,9 @@ def enviar_texto_meta(numero: str, mensagem: str) -> dict:
     print(f"[META] Envio texto status: {resp.status_code}")
     if resp.status_code >= 300:
         raise RuntimeError(f"Erro envio texto Meta: HTTP {resp.status_code} — {resp.text[:300]}")
+
+    if chatwoot_mirror:
+        _chatwoot.espelhar_envio_sistema(numero, mensagem)
 
     return resp.json()
 

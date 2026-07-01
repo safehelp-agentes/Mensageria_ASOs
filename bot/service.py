@@ -78,7 +78,7 @@ def _enviar_resposta_agente(phone: str, content: str):
     from src.meta.whatsapp import enviar_texto_meta
     from bot.state import registrar_mensagem_bot
     try:
-        enviar_texto_meta(phone, content)
+        enviar_texto_meta(phone, content, chatwoot_mirror=False)
         registrar_mensagem_bot(phone, content, tipo="agente")
         print(f"[CHATWOOT] Agente → {phone}: {content[:80]}")
     except Exception as e:

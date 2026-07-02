@@ -14,6 +14,17 @@ from src.utils.helpers import (
     normalizar_numero_whatsapp, numero_parece_valido,
 )
 
+# Texto do template `entrega_aso` aprovado na Meta. Espelhado no Chatwoot para
+# que a conversa mostre exatamente a mensagem que a empresa recebeu.
+_TEXTO_TEMPLATE_ENTREGA_ASO = (
+    "Prezado(a), segue em anexo o(s) ASO(s) (Atestado de Saúde Ocupacional) "
+    "referente(s) ao(s) exame(s) realizado(s).\n\n"
+    "Empresa: {nome_empresa}\n"
+    "Data de emissão: {data_emissao}\n\n"
+    "Este documento é de caráter oficial. Em caso de dúvidas, entre em contato "
+    "com o setor de saúde ocupacional responsável."
+)
+
 
 def _validar_config():
     if not META_WA_TOKEN:
@@ -141,8 +152,12 @@ def _enviar_documento_simples(numero: str, media_id: str, nome_arquivo: str) -> 
     return resp.json()
 
 
-def enviar_texto_meta(numero: str, mensagem: str) -> dict:
-    """Envia mensagem de texto simples."""
+def enviar_texto_meta(numero: str, mensagem: str, chatwoot_mirror: bool = True) -> dict:
+    """Envia mensagem de texto simples.
+
+    chatwoot_mirror=False quando o texto já está no Chatwoot (ex: resposta de agente humano)
+    para não criar mensagem duplicada na conversa.
+    """
     _validar_config()
 
     payload = {
@@ -160,6 +175,9 @@ def enviar_texto_meta(numero: str, mensagem: str) -> dict:
     print(f"[META] Envio texto status: {resp.status_code}")
     if resp.status_code >= 300:
         raise RuntimeError(f"Erro envio texto Meta: HTTP {resp.status_code} — {resp.text[:300]}")
+
+    if chatwoot_mirror:
+        _chatwoot.espelhar_envio_sistema(numero, mensagem)
 
     return resp.json()
 
@@ -242,12 +260,21 @@ def enviar_pdfs_empresa_meta(resultado: dict, numero_destino: str) -> dict:
             registrar_erro(f"[META] Erro ao enviar {nome_arquivo} para {numero_destino}: {e}")
 
     if enviados_ok > 0:
+<<<<<<< HEAD
         nomes_pdfs = "\n".join(
             f"  - {r['arquivo']}" for r in respostas if r["sucesso"]
         )
         _chatwoot.espelhar_envio_sistema(
             numero_destino,
             f"[ASO enviado] {nome_empresa} ({data_emissao})\n{nomes_pdfs}",
+=======
+        _chatwoot.espelhar_envio_sistema(
+            numero_destino,
+            _TEXTO_TEMPLATE_ENTREGA_ASO.format(
+                nome_empresa=nome_empresa,
+                data_emissao=data_emissao,
+            ),
+>>>>>>> d9f4faaa3a9e9a526a2917e83b4fd0bf7cb8897b
         )
 
     return {

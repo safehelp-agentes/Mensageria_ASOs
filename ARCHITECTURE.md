@@ -356,26 +356,63 @@ Implementado em `src/meta/whatsapp.py:enviar_pdfs_empresa_meta`. Se o primeiro e
 
 ---
 
-## 8. Webhook inbound (Meta → CRM)
+## 8. Fluxo de mensagens WhatsApp ↔ Chatwoot
 
-Mensagens que as empresas mandam de volta chegam via **n8n**:
+O sistema tem **dois sentidos** de tráfego de mensagens e um registro automático de envios:
+
+### 8.1. WhatsApp → Chatwoot (inbound)
 
 ```mermaid
 graph LR
-    Empresa[🏢 Empresa] -->|envia WhatsApp| Meta[(Meta API)]
-    Meta -->|webhook callback POST| N8N[n8n workflow]
-    N8N -->|INSERT mensagens| SB[(Supabase)]
-    SB -->|poll 30s| CRM[index.html]
+    Contato[📱 Contato] -->|envia WhatsApp| Meta[(Meta API)]
+    Meta -->|webhook POST /webhook-aso| WH[webhook_meta.py<br/>Docker/n8n]
+    WH -->|POST /bot/mensagem<br/>rede Docker interna| Bot[bot/service.py<br/>Docker]
+    Bot -->|espelhar_inbound| CW[(Chatwoot)]
+    Bot -->|se BOT_ATIVO=true| Handler[bot/handler.py]
+    Handler -->|resposta| Meta
+    CW -->|conversa aparece| Agente[👤 Agente]
 ```
 
-O fluxo n8n:
+O `webhook_meta.py` recebe o callback da Meta, extrai número e mensagem, e faz POST para `bot-service:8001/bot/mensagem` pela rede Docker interna (sem passar pelo Traefik). O bot então espelha a mensagem no Chatwoot via API e, se `BOT_ATIVO=true`, aciona o handler de atendimento automático.
 
-1. Responde `200 OK` imediatamente (evita timeout da Meta).
-2. Verifica se o payload contém `messages` (filtra status updates).
-3. Extrai `from`, `wamid`, `timestamp`, `type`, `body` da mensagem.
-4. Faz POST em `/rest/v1/mensagens` com `direcao=inbound`.
+### 8.2. Chatwoot → WhatsApp (outbound humano)
 
-Para registrar o webhook no Meta: no painel do app → WhatsApp → Configuration → Callback URL aponte para a URL do n8n (`https://<seu-n8n>/webhook/meta-webhook`).
+```mermaid
+graph LR
+    Agente[👤 Agente] -->|responde no Chatwoot| CW[(Chatwoot)]
+    CW -->|webhook POST<br/>https://n8n.../chatwoot/webhook| Traefik[Traefik<br/>HTTPS público]
+    Traefik -->|roteia /chatwoot| Bot[bot/service.py]
+    Bot -->|enviar_texto_meta| Meta[(Meta API)]
+    Meta --> Contato[📱 Contato]
+```
+
+O Chatwoot chama o webhook via **URL pública HTTPS** (para passar pelo SSRF check que bloqueia IPs privados). O Traefik roteia `n8n.srv1564091.hstgr.cloud/chatwoot/webhook` para `bot-service:8001` na rede Docker interna.
+
+O handler verifica:
+- `event == "message_created"` e `message_type == "outgoing"` → processa
+- `private == true` → ignora (notas internas)
+- `additional_attributes.source == "safework_pipeline"` → ignora (evita loop com envios automáticos)
+
+### 8.3. Pipeline → Chatwoot (registro de envio automático)
+
+Quando o pipeline envia um ASO via Meta API, chama `espelhar_envio_sistema()` para registrar a entrega na conversa do contato no Chatwoot. A mensagem é marcada com `additional_attributes: {source: "safework_pipeline"}` para que o bot service não a reencaminhe ao WhatsApp.
+
+```
+Pipeline → enviar_pdfs_empresa_meta() → Meta API → WhatsApp ✓
+                                      └─→ espelhar_envio_sistema() → Chatwoot
+                                              (message_type=outgoing,
+                                               additional_attributes.source=safework_pipeline)
+```
+
+### 8.4. Webhook inbound no Supabase (legado CRM)
+
+O n8n também grava mensagens inbound no Supabase para o CRM `index.html`. Esse fluxo é independente do Chatwoot:
+
+```mermaid
+graph LR
+    WH[webhook_meta.py] -->|INSERT mensagens| SB[(Supabase)]
+    SB -->|poll 30s| CRM[index.html]
+```
 
 ---
 

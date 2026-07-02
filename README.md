@@ -13,7 +13,7 @@
 
 **Plataforma completa de entrega de ASOs (Atestados de Saúde Ocupacional) via WhatsApp Business. Composta por três módulos independentes: um pipeline automático diário, um bot de atendimento sob demanda e uma automação de cadastro de contatos — todos integrados ao sistema legado SOC e ao Supabase.**
 
-[Configuração](#configuração) · [Pipeline](#pipeline-automático) · [Bot](#bot-de-atendimento) · [Cadastro de Contatos](#cadastro-de-contatos) · [CRM](#crm) · [Deploy](#deploy)
+[Configuração](#configuração) · [Pipeline](#pipeline-automático) · [Bot](#bot-de-atendimento) · [Chatwoot](#chatwoot-crm-de-chat) · [Cadastro de Contatos](#cadastro-de-contatos) · [CRM](#crm) · [Deploy](#deploy)
 
 </div>
 
@@ -21,12 +21,13 @@
 
 ## O problema que resolve
 
-Empresas de saúde ocupacional emitem **ASOs** diariamente para seus clientes. O fluxo manual — exportar PDF, encontrar o contato, enviar — tomava horas. Além disso, RHs precisavam ligar para solicitar documentos de funcionários específicos.
+Empresas de saúde ocupacional emitem **ASOs** diariamente para seus clientes. O fluxo manual — exportar PDF, encontrar o contato, enviar — tomava horas. Além disso, RHs precisavam ligar para solicitar documentos de funcionários específicos. E a equipe interna não tinha visibilidade das conversas do WhatsApp.
 
-Este sistema resolve os dois lados:
+Este sistema resolve os três lados:
 
 - **Pipeline automático**: todo dia útil busca novos ASOs no SOC e entrega no WhatsApp do RH de cada empresa, sem intervenção humana
 - **Bot de atendimento**: quando o RH precisa de um ASO específico a qualquer hora, basta enviar uma mensagem no WhatsApp — o bot localiza e entrega o PDF em segundos
+- **CRM Chatwoot**: todas as mensagens WhatsApp aparecem em tempo real para a equipe, que pode responder diretamente pelo Chatwoot — a resposta chega no WhatsApp do contato
 
 ---
 
@@ -41,7 +42,9 @@ Este sistema resolve os dois lados:
 │      │                                                                       │
 │      ├──► Supabase ──► dedup / estado / CRM                                 │
 │      │                                                                       │
-│      └──► Meta Cloud API ──► WhatsApp Business (1 template + N documentos)  │
+│      ├──► Meta Cloud API ──► WhatsApp Business (1 template + N documentos)  │
+│      │                                                                       │
+│      └──► Chatwoot API ──► registra nota de envio na conversa do contato    │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
 
@@ -55,25 +58,32 @@ Este sistema resolve os dois lados:
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
 
-┌──────────────────────────── BOT (FastAPI 24/7) ─────────────────────────────┐
+┌──────────────────────────── BOT + CRM (Docker 24/7) ────────────────────────┐
 │                                                                              │
-│  WhatsApp do RH ──► Meta Webhook ──► n8n ──► POST /bot/mensagem             │
-│                                                  │                          │
-│                                     ┌────────────┴────────────┐             │
-│                                     │  bot/handler.py          │             │
-│                                     │  (máquina de estados)    │             │
-│                                     └────────────┬────────────┘             │
-│                          ┌──────────────┬─────────┴──────────┐              │
-│                          ▼              ▼                     ▼              │
-│                    Groq LLM       SOC REST API          Supabase             │
-│                 (intenção/nome)  (funcionários,        (estado da            │
-│                                  ASOs, GED)             conversa)            │
-│                          │                                                   │
-│                          └──► PDF via SOAP ──► Meta API ──► WhatsApp RH     │
+│  WhatsApp ──► Meta Webhook ──► webhook_meta.py ──► POST /bot/mensagem       │
+│                (Docker/n8n)   (Docker/n8n)              │                   │
+│                                               bot/service.py (Docker)       │
+│                                                  │           │              │
+│                             ┌────────────────────┘           │              │
+│                             ▼                                ▼              │
+│                    Chatwoot (CRM)                   BOT_ATIVO=true?         │
+│                  espelha mensagem                           │               │
+│                  recebida para a                   bot/handler.py           │
+│                  equipe ver                        (máquina de estados)     │
+│                                            ┌────────┴──────┬──────┐        │
+│                                            ▼               ▼      ▼        │
+│                                       Groq LLM       SOC REST   Supabase   │
+│                                            │                               │
+│                                       SOC SOAP ──► PDF ──► Meta ──► WA    │
+│                                                                              │
+│  Agente no Chatwoot responde ──► POST /chatwoot/webhook (Traefik/HTTPS)     │
+│                                       │                                     │
+│                                  bot/service.py ──► Meta API ──► WhatsApp  │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
 
-Conversas inbound ──► n8n ──► Supabase ──► CRM (index.html)
+Conversas inbound ──► Chatwoot (CRM de chat, chat.srv1564091.hstgr.cloud)
+Histórico de envios ──► Supabase ──► CRM (index.html)
 ```
 
 ---
@@ -116,7 +126,8 @@ Ao receber uma mensagem, o bot consulta o exportador `215872` (Contatos das Empr
 | Sistema de origem | **SOC** (REST + SOAP WS-Security) | Sistema legado do cliente — sem alternativa |
 | Mensageria | **Meta Cloud API v19.0** | Única forma oficial de WhatsApp Business em escala |
 | Banco / estado | **Supabase** (PostgreSQL + PostgREST) | REST nativo, realtime para CRM, auth integrada |
-| Webhook inbound | **n8n** (Docker) | Orquestração visual, fácil de manter por não-devs |
+| CRM de chat | **Chatwoot** v4.15 (Docker) | Agentes respondem no Chatwoot → vai ao WhatsApp |
+| Webhook inbound | **n8n** (Docker) | Recebe callbacks da Meta e repassa ao bot |
 | Proxy reverso | **Traefik** (Docker) | TLS automático via Let's Encrypt |
 | Deploy | **VPS Ubuntu 24.04** | Sem overhead de K8s para pipeline diário + bot leve |
 | CRM | **HTML/CSS/JS vanilla** | Zero dependências, zero build contínuo, funciona em qualquer CDN |
@@ -204,74 +215,45 @@ python main.py --data "09/05/2026"
 
 ## Bot de atendimento
 
-Servidor FastAPI que responde mensagens WhatsApp sob demanda, 24/7.
+Servidor FastAPI que responde mensagens WhatsApp sob demanda, 24/7. Roda como container Docker (stack `docker/bot/`) exposto via Traefik.
 
-### Configurar o serviço systemd (primeira vez)
-
-O bot roda como um serviço Linux gerenciado pelo systemd — isso garante que ele **sobe automaticamente** com o servidor e **reinicia sozinho** se travar.
+### Iniciar (primeira vez)
 
 ```bash
-# 1. Criar o arquivo de serviço
-cat > /etc/systemd/system/envio-aso.service << 'EOF'
-[Unit]
-Description=SafeWork Bot — Envio ASO
-After=network.target
+cd /opt/safework/envio_ASO/docker/bot
 
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/opt/safework/envio_ASO
-EnvironmentFile=/opt/safework/envio_ASO/.env
-ExecStart=/opt/safework/envio_ASO/.venv/bin/uvicorn bot.service:app --host 0.0.0.0 --port 8001
-Restart=always
-RestartSec=5
-StandardOutput=journal
-StandardError=journal
+# Build da imagem (1x — só repetir se requirements.txt mudar)
+docker build -t safework-bot .
 
-[Install]
-WantedBy=multi-user.target
-EOF
+# Subir o container
+docker compose up -d
 
-# 2. Ativar e iniciar
-systemctl daemon-reload
-systemctl enable envio-aso   # inicia automaticamente no boot
-systemctl start envio-aso
-systemctl status envio-aso   # deve mostrar "active (running)"
+# Verificar
+docker logs bot-bot-service-1 --tail 20
+# → Application startup complete.
+# → Uvicorn running on http://0.0.0.0:8001
 ```
 
-> **Só é necessário fazer isso uma vez.** Após configurado, use os comandos abaixo no dia a dia.
-
-### Gerenciar o serviço
+### Gerenciar o container
 
 ```bash
-systemctl start envio-aso      # iniciar
-systemctl stop envio-aso       # parar
-systemctl restart envio-aso    # reiniciar (necessário após git pull)
-systemctl status envio-aso     # ver estado atual
+# Reiniciar (necessário após atualizar service.py)
+docker compose -f /opt/safework/envio_ASO/docker/bot/docker-compose.yml restart
+
+# Ver estado
+docker ps --filter name=bot-bot-service
+
+# Ver logs em tempo real
+docker logs bot-bot-service-1 -f
 ```
 
 ### Verificar status
 
 ```bash
-systemctl status envio-aso
-curl http://localhost:8001/bot/health
-# → {"status":"ok","bot_ativo":true}
-```
-
-### Ver logs
-
-```bash
-journalctl -u envio-aso -f        # logs em tempo real
-journalctl -u envio-aso -n 50     # últimas 50 linhas
-journalctl -u envio-aso --since "1 hour ago"
-```
-
-### Modo foreground (desenvolvimento local)
-
-```bash
-cd /opt/safework/envio_ASO
-source .venv/bin/activate
-uvicorn bot.service:app --host 0.0.0.0 --port 8001 --reload
+# De dentro do container webhook-aso (testa a comunicação interna)
+docker exec n8n-webhook-aso-1 python3 -c \
+  "import urllib.request; r=urllib.request.urlopen('http://bot-service:8001/bot/health'); print(r.read().decode())"
+# → {"status":"ok","bot_ativo":false}
 ```
 
 ### Fluxo de conversa
@@ -296,8 +278,11 @@ Mensagem recebida
 
 | Método | Rota | Descrição |
 |---|---|---|
-| `POST` | `/bot/mensagem` | Recebe mensagem do n8n (webhook Meta) |
+| `POST` | `/bot/mensagem` | Recebe mensagem do webhook_meta.py (via rede Docker interna) |
 | `GET` | `/bot/health` | Health check |
+| `POST` | `/chatwoot/webhook` | Recebe eventos do Chatwoot (agente respondeu → envia ao WhatsApp) |
+
+O endpoint `/chatwoot/webhook` é exposto publicamente via Traefik em `https://n8n.srv1564091.hstgr.cloud/chatwoot/webhook` para contornar a proteção SSRF do Chatwoot (que bloqueia IPs privados).
 
 ### Modo de teste
 
@@ -308,6 +293,45 @@ empresa 1530555
 ```
 
 O bot assume aquela empresa para toda a sessão, como se o número estivesse cadastrado no SOC com aquele `CODIGOEMPRESA`.
+
+---
+
+## Chatwoot CRM de chat
+
+O Chatwoot é o hub de atendimento humano: todas as mensagens WhatsApp recebidas aparecem lá para os agentes, e respostas digitadas no Chatwoot chegam ao contato pelo WhatsApp.
+
+**Acesso:** `https://chat.srv1564091.hstgr.cloud`
+
+### Fluxo completo
+
+```
+WhatsApp → Meta → webhook_meta.py → /bot/mensagem → espelhar_inbound() → Chatwoot
+                                                                          (conversa aparece)
+
+Agente digita no Chatwoot → webhook → /chatwoot/webhook → Meta API → WhatsApp do contato
+
+Pipeline envia ASO → Meta API → WhatsApp do contato
+                  └───────────────────────────────→ Chatwoot (mensagem de envio na conversa)
+```
+
+### Configuração no Chatwoot (já feita — referência)
+
+1. **Inbox** tipo "API Channel" — ID `1`, nome "WhatsApp SafeWork"
+2. **Webhook da inbox**: `https://n8n.srv1564091.hstgr.cloud/chatwoot/webhook?token=<CHATWOOT_WEBHOOK_TOKEN>`
+3. **Eventos ativos no webhook**: `message_created`, `conversation_created`
+
+### Docker (stack Chatwoot)
+
+```bash
+cd /opt/safework/envio_ASO/docker/chatwoot
+
+# Iniciar / reiniciar
+docker compose up -d
+docker compose restart chatwoot_app chatwoot_worker
+
+# Logs
+docker logs chatwoot-chatwoot_app-1 -f
+```
 
 ---
 
@@ -456,6 +480,19 @@ Todas as variáveis vivem no `.env`. Use `.env.example` como base.
 | `GOOGLE_SHEETS_ID` | sim (--sheets) | ID da planilha Google Sheets conectada ao Forms |
 | `GOOGLE_SHEETS_GID` | sim (--sheets) | GID da aba com as respostas do Forms |
 
+### Chatwoot
+
+| Variável | Obrigatório | Descrição |
+|---|---|---|
+| `CHATWOOT_ATIVO` | não | `true` para ativar espelhamento no Chatwoot. Padrão: `false` |
+| `CHATWOOT_BASE_URL` | sim (se ativo) | URL do Chatwoot. Ex: `https://chat.srv1564091.hstgr.cloud` |
+| `CHATWOOT_API_TOKEN` | sim (se ativo) | Token de acesso do agente bot (Chatwoot → Perfil → Token) |
+| `CHATWOOT_ACCOUNT_ID` | sim (se ativo) | ID da conta Chatwoot (normalmente `1`) |
+| `CHATWOOT_INBOX_ID` | sim (se ativo) | ID da inbox "WhatsApp SafeWork" (tipo: API Channel) |
+| `CHATWOOT_WEBHOOK_TOKEN` | sim (se ativo) | Token de segurança para o endpoint `/chatwoot/webhook` |
+
+> O bot valida `?token=` na URL do webhook. Configure o mesmo valor na URL do webhook da inbox no Chatwoot.
+
 ### Alertas por e-mail (opcional)
 
 | Variável | Descrição |
@@ -471,17 +508,27 @@ Todas as variáveis vivem no `.env`. Use `.env.example` como base.
 
 ```
 envio_ASO/
-├── main.py                        # Orquestrador do pipeline — 5 etapas numeradas
+├── main.py                        # Orquestrador do pipeline — etapas numeradas
 ├── config.py                      # Carrega .env, expõe constantes tipadas
 ├── build.py                       # Injeta credenciais Supabase no index.html
 ├── index.html                     # CRM completo single-file (sem build contínuo)
+├── deploy.sh                      # Script de deploy (git pull + pip + restart bot)
 │
 ├── bot/                           # Bot de atendimento WhatsApp (FastAPI)
-│   ├── service.py                 # App FastAPI — endpoint /bot/mensagem e /bot/health
+│   ├── service.py                 # App FastAPI: /bot/mensagem, /bot/health, /chatwoot/webhook
 │   ├── handler.py                 # Máquina de estados — orquestra o fluxo de conversa
 │   ├── tools.py                   # Ferramentas SOC: buscar funcionários, ASOs, baixar PDF
-│   ├── llm.py                     # Interpretação de linguagem natural via Groq
-│   └── state.py                   # Persistência de estado das conversas no Supabase
+│   ├── llm.py                     # Interpretação de linguagem natural via Groq/OpenAI
+│   └── state.py                   # Persistência de estado das conversas (Supabase via requests)
+│
+├── docker/
+│   ├── bot/                       # Container Docker do bot service
+│   │   ├── Dockerfile             # python:3.11-slim + dependências FastAPI/openai
+│   │   ├── docker-compose.yml     # Traefik labels + alias bot-service na rede n8n_default
+│   │   └── requirements.txt       # fastapi, uvicorn, openai, requests, python-dotenv
+│   └── chatwoot/                  # Stack Chatwoot (CRM de chat)
+│       ├── docker-compose.yml     # chatwoot_app + worker + postgres + redis + Traefik
+│       └── .env.chatwoot          # Variáveis de ambiente do Chatwoot (não commitado)
 │
 └── src/
     ├── soc/
@@ -491,7 +538,7 @@ envio_ASO/
     │   └── cadastra_contatos.py   # Playwright CDP — cadastra contatos via UI web do SOC
     │
     ├── meta/
-    │   └── whatsapp.py            # Upload PDF + template + documentos (1 conversa/empresa)
+    │   └── whatsapp.py            # Upload PDF + template + documentos + espelho Chatwoot
     │
     ├── pipeline/
     │   └── processor.py           # Coleta em lote, download, extração ZIP, agrupamento
@@ -500,6 +547,7 @@ envio_ASO/
     │   └── manager.py             # Chave de identidade ASO, deduplicação
     │
     ├── integrations/
+    │   ├── chatwoot.py            # Espelhamento WhatsApp↔Chatwoot (inbound/outbound/sistema)
     │   ├── supabase.py            # PostgREST — upsert empresas, ASOs, mensagens
     │   └── email.py               # Relatório de erros via SMTP Gmail
     │
@@ -511,14 +559,20 @@ envio_ASO/
 
 ## Deploy
 
-### Atualizar o bot (pipeline + bot)
+### Atualizar código (pipeline + bot)
 
 ```bash
 cd /opt/safework/envio_ASO
 git pull origin main
-systemctl restart envio-aso
-systemctl status envio-aso   # confirmar que voltou "active (running)"
+
+# Reiniciar o container do bot para pegar as mudanças
+docker compose -f docker/bot/docker-compose.yml restart
+
+# Confirmar que subiu
+docker logs bot-bot-service-1 --tail 5
 ```
+
+> Se alterou `docker/bot/requirements.txt`, faça `docker build -t safework-bot .` antes do restart.
 
 ### Atualizar o CRM
 
@@ -530,11 +584,20 @@ export $(grep -v '^#' .env | grep -v '^$' | xargs)
 python build.py && cp index.html /opt/safework/crm/
 ```
 
-### Verificar serviços Docker
+### Verificar todos os serviços
 
 ```bash
-docker ps   # Traefik, n8n, nginx-crm, postgres, redis devem estar Up
+docker ps --format "{{.Names}}\t{{.Status}}" | grep -E "bot|webhook|chatwoot|n8n|traefik"
 ```
+
+Containers esperados:
+- `bot-bot-service-1` — FastAPI bot
+- `n8n-webhook-aso-1` — Recebe webhooks da Meta
+- `n8n-traefik-1` (ou similar) — Proxy reverso HTTPS
+- `chatwoot-chatwoot_app-1` — CRM Chatwoot
+- `chatwoot-chatwoot_worker-1` — Worker Sidekiq
+- `chatwoot-chatwoot_postgres-1` — Banco do Chatwoot
+- `chatwoot-chatwoot_redis-1` — Cache do Chatwoot
 
 ---
 
@@ -567,9 +630,12 @@ Detalhes completos em [SECURITY.md](SECURITY.md).
 | `Erro envio template: HTTP 400` | Template não aprovado ou nome errado | Painel Meta → Message Templates |
 | `BLOQUEIO DE SEGURANÇA` | Trava funcionando corretamente | Ativar `ENVIO_REAL_EMPRESAS=true` |
 | `[SUPABASE] Erro upsert: 403` | RLS bloqueando ou chave errada | Verificar `SUPABASE_SERVICE_KEY` em supabase.com → Settings → API |
-| Bot: não responde após `git pull` | Serviço não foi reiniciado | `systemctl restart envio-aso` |
-| Bot: `inactive (dead)` no status | Serviço nunca foi configurado | Ver seção *Configurar o serviço systemd* |
-| Bot: `failed` no status | Erro na inicialização | `journalctl -u envio-aso -n 50` para ver o motivo |
+| Bot: não responde após `git pull` | Container não foi reiniciado | `docker compose -f docker/bot/docker-compose.yml restart` |
+| Bot: container parado | Erro na inicialização | `docker logs bot-bot-service-1 --tail 50` para ver o motivo |
+| Chatwoot: "Falha ao enviar" na resposta | Webhook não configurado ou bot parado | Verificar URL do webhook na inbox + `docker ps` |
+| Chatwoot: mensagens recebidas não aparecem | `CHATWOOT_ATIVO=false` no .env | Setar `CHATWOOT_ATIVO=true` e reiniciar o bot |
+| Chatwoot: conversa não abre para número novo | Contato não existe no Chatwoot | O bot cria automaticamente na primeira mensagem |
+| ASOs não aparecem no Chatwoot | Pipeline não chamou `espelhar_envio_sistema` | Verificar se `CHATWOOT_ATIVO=true` no `.env` do servidor |
 | Bot: "Não encontrei nenhum funcionário" para qualquer nome | `SOC_CHAVE_FUNCIONARIOS` ausente no `.env` | Adicionar chave do exportador `192399` ao `.env` e reiniciar |
 | Bot: `[BOT] SOC retornou 0 registro(s)` nos logs | `SOC_EMPRESA` não configurado ou chave 192399 vinculada à empresa errada | Verificar `SOC_EMPRESA` no `.env` — o exportador 192399 exige `empresa=principal` |
 | Bot: `Não foi encontrado registro no SOC` | Número não cadastrado no exportador 215872 | Cadastrar o contato no SOC com TEL1/TEL2 correto |

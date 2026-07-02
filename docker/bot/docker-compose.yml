@@ -1,0 +1,40 @@
+# =============================================================================
+# SafeWork Bot Service — FastAPI + Traefik
+#
+# Expõe /chatwoot/webhook via HTTPS público (n8n.srv1564091.hstgr.cloud)
+# para contornar a proteção SSRF do Chatwoot.
+#
+# Pré-requisito: rede n8n_default deve existir (criada pelo stack do n8n)
+# Confirme com: docker network ls | grep n8n_default
+#
+# Primeiro uso:
+#   cd /opt/safework/envio_ASO/docker/bot
+#   docker build -t safework-bot .
+#   docker compose up -d
+# =============================================================================
+
+services:
+  bot-service:
+    image: safework-bot
+    working_dir: /app
+    volumes:
+      - /opt/safework/envio_ASO:/app:ro
+    env_file:
+      - /opt/safework/envio_ASO/.env
+    restart: unless-stopped
+    networks:
+      traefik_net:
+        aliases:
+          - bot-service
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.bot-chatwoot.rule=Host(`n8n.srv1564091.hstgr.cloud`) && PathPrefix(`/chatwoot`)"
+      - "traefik.http.routers.bot-chatwoot.entrypoints=websecure"
+      - "traefik.http.routers.bot-chatwoot.tls.certresolver=letsencrypt"
+      - "traefik.http.services.bot-chatwoot.loadbalancer.server.port=8001"
+      - "traefik.docker.network=n8n_default"
+
+networks:
+  traefik_net:
+    external: true
+    name: n8n_default

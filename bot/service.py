@@ -48,6 +48,9 @@ class MensagemEntrada(BaseModel):
 
 @app.post("/bot/mensagem")
 async def receber_mensagem(msg: MensagemEntrada, background_tasks: BackgroundTasks):
+    # Espelha no Chatwoot independente do estado do bot
+    background_tasks.add_task(_chatwoot.espelhar_inbound, msg.numero, msg.mensagem)
+
     if not _BOT_ATIVO:
         return {"status": "bot_inativo"}
 
@@ -97,6 +100,10 @@ async def chatwoot_webhook(request: Request, background_tasks: BackgroundTasks, 
         return {"status": "ignored"}
 
     if data.get("message_type") != "outgoing":
+        return {"status": "ignored"}
+
+    # Mensagens criadas pelo pipeline (envio automático de ASOs) — não reencaminhar ao WhatsApp
+    if (data.get("additional_attributes") or {}).get("source") == "safework_pipeline":
         return {"status": "ignored"}
 
     msg_id = data.get("id", 0)

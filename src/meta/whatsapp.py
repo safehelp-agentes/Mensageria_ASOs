@@ -14,6 +14,17 @@ from src.utils.helpers import (
     normalizar_numero_whatsapp, numero_parece_valido,
 )
 
+# Texto do template `entrega_aso` aprovado na Meta. Espelhado no Chatwoot para
+# que a conversa mostre exatamente a mensagem que a empresa recebeu.
+_TEXTO_TEMPLATE_ENTREGA_ASO = (
+    "Prezado(a), segue em anexo o(s) ASO(s) (Atestado de Saúde Ocupacional) "
+    "referente(s) ao(s) exame(s) realizado(s).\n\n"
+    "Empresa: {nome_empresa}\n"
+    "Data de emissão: {data_emissao}\n\n"
+    "Este documento é de caráter oficial. Em caso de dúvidas, entre em contato "
+    "com o setor de saúde ocupacional responsável."
+)
+
 
 def _validar_config():
     if not META_WA_TOKEN:
@@ -249,12 +260,12 @@ def enviar_pdfs_empresa_meta(resultado: dict, numero_destino: str) -> dict:
             registrar_erro(f"[META] Erro ao enviar {nome_arquivo} para {numero_destino}: {e}")
 
     if enviados_ok > 0:
-        nomes_pdfs = "\n".join(
-            f"  - {r['arquivo']}" for r in respostas if r["sucesso"]
-        )
         _chatwoot.espelhar_envio_sistema(
             numero_destino,
-            f"[ASO enviado] {nome_empresa} ({data_emissao})\n{nomes_pdfs}",
+            _TEXTO_TEMPLATE_ENTREGA_ASO.format(
+                nome_empresa=nome_empresa,
+                data_emissao=data_emissao,
+            ),
         )
 
     return {

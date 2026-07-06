@@ -260,21 +260,12 @@ def enviar_pdfs_empresa_meta(resultado: dict, numero_destino: str) -> dict:
             registrar_erro(f"[META] Erro ao enviar {nome_arquivo} para {numero_destino}: {e}")
 
     if enviados_ok > 0:
-<<<<<<< HEAD
-        nomes_pdfs = "\n".join(
-            f"  - {r['arquivo']}" for r in respostas if r["sucesso"]
-        )
-        _chatwoot.espelhar_envio_sistema(
-            numero_destino,
-            f"[ASO enviado] {nome_empresa} ({data_emissao})\n{nomes_pdfs}",
-=======
         _chatwoot.espelhar_envio_sistema(
             numero_destino,
             _TEXTO_TEMPLATE_ENTREGA_ASO.format(
                 nome_empresa=nome_empresa,
                 data_emissao=data_emissao,
             ),
->>>>>>> d9f4faaa3a9e9a526a2917e83b4fd0bf7cb8897b
         )
 
     return {

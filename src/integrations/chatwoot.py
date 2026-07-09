@@ -25,7 +25,14 @@ def _ok() -> bool:
 
 
 def _headers() -> dict:
-    return {"api_access_token": _API_TOKEN, "Content-Type": "application/json"}
+    # X-Forwarded-Proto: https evita redirect do Rails (FORCE_SSL=true) quando
+    # o CHATWOOT_BASE_URL aponta direto pro container (http://chatwoot_app:3000),
+    # sem passar pelo Traefik — que normalmente é quem manda esse header.
+    return {
+        "api_access_token": _API_TOKEN,
+        "Content-Type": "application/json",
+        "X-Forwarded-Proto": "https",
+    }
 
 
 def _api(path: str) -> str:

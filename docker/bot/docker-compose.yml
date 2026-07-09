@@ -21,6 +21,11 @@ services:
       - /opt/safework/envio_ASO:/app:ro
     env_file:
       - /opt/safework/envio_ASO/.env
+    environment:
+      # Sobrescreve a URL pública do .env — dentro da rede Docker, fala direto
+      # com o container do Chatwoot (nome resolvido via DNS interno, robusto
+      # a mudança de IP), sem depender do Traefik/HTTPS nem de rotas de host.
+      - CHATWOOT_BASE_URL=http://chatwoot_app:3000
     restart: unless-stopped
     networks:
       traefik_net:

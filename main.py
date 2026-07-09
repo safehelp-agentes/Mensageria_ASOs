@@ -122,7 +122,7 @@ def _processar_grupo_empresas(grupos: dict, data_referencia: str, config_empresa
                     "meta_enviados_erro": resp_meta["enviados_erro"],
                     "meta_resposta":      resp_meta,
                 })
-                print(f"  [META] {resp_meta['enviados_ok']}/{resp_meta['total']} PDF(s) enviados")
+                print(f"  [META] {resp_meta.get('asos_incluidos', 0)} ASO(s) em {resp_meta['enviados_ok']}/{resp_meta['total']} mensagem(ns)")
 
                 if resp_meta["enviados_ok"] > 0:
                     chaves_com_erro_dl = {chave_aso(r) for r in resultado["registros_com_erro"]}

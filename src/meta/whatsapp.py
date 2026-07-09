@@ -2,6 +2,7 @@ import os
 import time
 import requests
 from datetime import datetime, timedelta
+from pypdf import PdfReader, PdfWriter
 
 from src.integrations import chatwoot as _chatwoot
 from config import (
@@ -184,11 +185,43 @@ def enviar_texto_meta(numero: str, mensagem: str, chatwoot_mirror: bool = True) 
 
 # ── Orquestrador de envio por empresa ─────────────────────────────────────────
 
+def _unir_pdfs_em_arquivo(caminhos_pdf: list, caminho_saida: str) -> int:
+    """Une vários PDFs num único arquivo, com um marcador (bookmark) por documento.
+    Retorna a quantidade de PDFs efetivamente incluídos."""
+    writer    = PdfWriter()
+    incluidos = 0
+
+    for caminho in caminhos_pdf:
+        try:
+            reader = PdfReader(caminho)
+            if reader.is_encrypted:
+                try:
+                    reader.decrypt("")
+                except Exception:
+                    pass
+            pagina_inicial = len(writer.pages)
+            for pagina in reader.pages:
+                writer.add_page(pagina)
+            titulo = os.path.splitext(os.path.basename(caminho))[0]
+            writer.add_outline_item(titulo, pagina_inicial)
+            incluidos += 1
+        except Exception as e:
+            registrar_erro(f"[META] Falha ao unir PDF {os.path.basename(caminho)}: {e}")
+
+    if incluidos == 0:
+        raise RuntimeError("Nenhum PDF pôde ser unido em arquivo único.")
+
+    with open(caminho_saida, "wb") as f:
+        writer.write(f)
+    return incluidos
+
+
 def enviar_pdfs_empresa_meta(resultado: dict, numero_destino: str) -> dict:
     """
-    Envia todos os PDFs de uma empresa usando apenas 1 conversa:
-    - 1º PDF → template (abre a conversa)
-    - demais → documento simples dentro da janela de 24h (sem custo extra)
+    Une todos os PDFs da empresa em um único arquivo e envia via template.
+    - 1 template por empresa → 1 custo fixo, entrega garantida (não depende
+      da janela de 24h, ao contrário do documento simples).
+    - Todos os ASOs vão no mesmo PDF, com um bookmark por funcionário.
     """
     _validar_config()
 
@@ -209,57 +242,36 @@ def enviar_pdfs_empresa_meta(resultado: dict, numero_destino: str) -> dict:
     if not pdfs:
         raise RuntimeError(f"Nenhum PDF encontrado para empresa {nome_empresa}")
 
-    total_asos    = len(pdfs)
-    respostas     = []
-    enviados_ok   = 0
-    enviados_erro = 0
+    total_asos   = len(pdfs)
+    sufixo_data  = data_ref or data_emissao.replace("/", "-")
+    nome_arquivo = f"ASOs_{sanitizar_nome(nome_empresa)}_{sufixo_data}.pdf"
 
-    print(f"  [META] {total_asos} PDF(s) → {numero_destino} (1 conversa)")
+    print(f"  [META] Unindo {total_asos} ASO(s) em 1 PDF → {numero_destino}")
 
-    for idx, caminho_pdf in enumerate(pdfs):
-        nome_arquivo = os.path.basename(caminho_pdf)
-        eh_primeiro  = idx == 0
+    caminho_unido = os.path.join(pasta_empresa, nome_arquivo)
+    incluidos     = _unir_pdfs_em_arquivo(pdfs, caminho_unido)
 
-        print(f"    [META] {'[TEMPLATE]' if eh_primeiro else '[DOCUMENTO]'} {nome_arquivo}")
-
+    try:
+        media_id = _fazer_upload_pdf(caminho_unido)
+        resp     = enviar_template_com_pdf(
+            numero=numero_destino,
+            media_id=media_id,
+            nome_empresa=nome_empresa,
+            data_emissao=data_emissao,
+            nome_arquivo_pdf=nome_arquivo,
+        )
+        sucesso, erro = True, None
+        print(f"    [META] Enviado com sucesso: {nome_arquivo} ({incluidos} ASO(s))")
+    except Exception as e:
+        resp, sucesso, erro = None, False, str(e)
+        registrar_erro(f"[META] Erro ao enviar {nome_arquivo} para {numero_destino}: {e}")
+    finally:
         try:
-            media_id = _fazer_upload_pdf(caminho_pdf)
+            os.remove(caminho_unido)
+        except OSError:
+            pass
 
-            if eh_primeiro:
-                resp = enviar_template_com_pdf(
-                    numero=numero_destino,
-                    media_id=media_id,
-                    nome_empresa=nome_empresa,
-                    data_emissao=data_emissao,
-                    nome_arquivo_pdf=nome_arquivo,
-                )
-                if total_asos > 1:
-                    print("    [META] Aguardando 3s para conversa ser estabelecida...")
-                    time.sleep(3)
-            else:
-                resp = _enviar_documento_simples(numero_destino, media_id, nome_arquivo)
-
-            respostas.append({
-                "arquivo": nome_arquivo,
-                "tipo":    "template" if eh_primeiro else "documento",
-                "sucesso": True,
-                "resposta": resp,
-            })
-            enviados_ok += 1
-            print(f"    [META] Enviado com sucesso: {nome_arquivo}")
-            time.sleep(1)
-
-        except Exception as e:
-            respostas.append({
-                "arquivo": nome_arquivo,
-                "tipo":    "template" if eh_primeiro else "documento",
-                "sucesso": False,
-                "erro":    str(e),
-            })
-            enviados_erro += 1
-            registrar_erro(f"[META] Erro ao enviar {nome_arquivo} para {numero_destino}: {e}")
-
-    if enviados_ok > 0:
+    if sucesso:
         _chatwoot.espelhar_envio_sistema(
             numero_destino,
             _TEXTO_TEMPLATE_ENTREGA_ASO.format(
@@ -269,11 +281,19 @@ def enviar_pdfs_empresa_meta(resultado: dict, numero_destino: str) -> dict:
         )
 
     return {
-        "empresa":       nome_empresa,
-        "total":         total_asos,
-        "enviados_ok":   enviados_ok,
-        "enviados_erro": enviados_erro,
-        "respostas":     respostas,
+        "empresa":        nome_empresa,
+        "total":          1,
+        "asos_incluidos": incluidos,
+        "enviados_ok":    1 if sucesso else 0,
+        "enviados_erro":  0 if sucesso else 1,
+        "respostas": [{
+            "arquivo":        nome_arquivo,
+            "tipo":           "template",
+            "sucesso":        sucesso,
+            "resposta":       resp,
+            "erro":           erro,
+            "asos_incluidos": incluidos,
+        }],
     }
 
 

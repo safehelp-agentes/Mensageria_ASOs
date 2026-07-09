@@ -314,16 +314,15 @@ Pipeline envia ASO → Meta API → WhatsApp do contato
                   └───────────────────────────────→ Chatwoot (mensagem de envio na conversa)
 ```
 
-### Configuração no Chatwoot (já feita — referência)
+### Chatwoot é um projeto separado
 
-1. **Inbox** tipo "API Channel" — ID `1`, nome "WhatsApp SafeWork"
-2. **Webhook da inbox**: `https://n8n.srv1564091.hstgr.cloud/chatwoot/webhook?token=<CHATWOOT_WEBHOOK_TOKEN>`
-3. **Eventos ativos no webhook**: `message_created`, `conversation_created`
+O Chatwoot **não mora mais neste repositório**. Ele foi migrado para um projeto independente, já que passou a ser usado por mais de uma automação além do envio de ASOs:
 
-### Docker (stack Chatwoot)
+- **Repositório:** `github.com/safehelp-agentes/ChatWoot`
+- **Local na VPS:** `/opt/safework/chatwoot` (antes: `/opt/safework/envio_ASO/docker/chatwoot`)
 
 ```bash
-cd /opt/safework/envio_ASO/docker/chatwoot
+cd /opt/safework/chatwoot
 
 # Iniciar / reiniciar
 docker compose up -d
@@ -332,6 +331,14 @@ docker compose restart chatwoot_app chatwoot_worker
 # Logs
 docker logs chatwoot-chatwoot_app-1 -f
 ```
+
+### Configuração da inbox usada pelo espelhamento
+
+> A inbox original "API Channel" havia sido apagada em algum momento e substituída por um canal nativo "WhatsApp Cloud API", que envia mensagem real pela Meta sempre que um registro `outgoing` é criado via API — causando envio duplicado ao cliente quando usada para o espelhamento (`espelhar_outbound`/`espelhar_envio_sistema`). Isso já foi corrigido: recriamos a inbox correta (tipo "API Channel", nome "WhatsApp SafeWork") e atualizamos `CHATWOOT_INBOX_ID`. **Nunca aponte `CHATWOOT_INBOX_ID` para uma inbox de canal nativo** (WhatsApp Cloud API, etc.) — só para "API Channel".
+
+1. **Inbox** tipo "API Channel" (**não** "WhatsApp Cloud API") — "WhatsApp SafeWork"
+2. **Webhook da inbox**: configurado via API (`channel.webhook_url`) apontando para `https://n8n.srv1564091.hstgr.cloud/chatwoot/webhook?token=<CHATWOOT_WEBHOOK_TOKEN>`
+3. **Eventos que disparam o webhook**: `message_created` (o bot filtra por `message_type == "outgoing"` e ignora ecos — ver `bot/service.py`)
 
 ---
 
@@ -488,7 +495,7 @@ Todas as variáveis vivem no `.env`. Use `.env.example` como base.
 | `CHATWOOT_BASE_URL` | sim (se ativo) | URL do Chatwoot. Ex: `https://chat.srv1564091.hstgr.cloud` |
 | `CHATWOOT_API_TOKEN` | sim (se ativo) | Token de acesso do agente bot (Chatwoot → Perfil → Token) |
 | `CHATWOOT_ACCOUNT_ID` | sim (se ativo) | ID da conta Chatwoot (normalmente `1`) |
-| `CHATWOOT_INBOX_ID` | sim (se ativo) | ID da inbox "WhatsApp SafeWork" (tipo: API Channel) |
+| `CHATWOOT_INBOX_ID` | sim (se ativo) | ID da inbox "WhatsApp SafeWork" — **precisa ser tipo "API Channel"**. Nunca apontar para inbox de canal nativo (ex: "WhatsApp Cloud API") — esse tipo envia mensagem real pela Meta ao espelhar, duplicando o envio do pipeline (ver [seção Chatwoot](#chatwoot-crm-de-chat)) |
 | `CHATWOOT_WEBHOOK_TOKEN` | sim (se ativo) | Token de segurança para o endpoint `/chatwoot/webhook` |
 
 > O bot valida `?token=` na URL do webhook. Configure o mesmo valor na URL do webhook da inbox no Chatwoot.
@@ -522,13 +529,11 @@ envio_ASO/
 │   └── state.py                   # Persistência de estado das conversas (Supabase via requests)
 │
 ├── docker/
-│   ├── bot/                       # Container Docker do bot service
-│   │   ├── Dockerfile             # python:3.11-slim + dependências FastAPI/openai
-│   │   ├── docker-compose.yml     # Traefik labels + alias bot-service na rede n8n_default
-│   │   └── requirements.txt       # fastapi, uvicorn, openai, requests, python-dotenv
-│   └── chatwoot/                  # Stack Chatwoot (CRM de chat)
-│       ├── docker-compose.yml     # chatwoot_app + worker + postgres + redis + Traefik
-│       └── .env.chatwoot          # Variáveis de ambiente do Chatwoot (não commitado)
+│   └── bot/                       # Container Docker do bot service
+│       ├── Dockerfile             # python:3.11-slim + dependências FastAPI/openai
+│       ├── docker-compose.yml     # Traefik labels + alias bot-service na rede n8n_default
+│       └── requirements.txt       # fastapi, uvicorn, openai, requests, python-dotenv
+│                                   # (Chatwoot é um projeto separado — github.com/safehelp-agentes/ChatWoot)
 │
 └── src/
     ├── soc/
@@ -636,6 +641,7 @@ Detalhes completos em [SECURITY.md](SECURITY.md).
 | Chatwoot: mensagens recebidas não aparecem | `CHATWOOT_ATIVO=false` no .env | Setar `CHATWOOT_ATIVO=true` e reiniciar o bot |
 | Chatwoot: conversa não abre para número novo | Contato não existe no Chatwoot | O bot cria automaticamente na primeira mensagem |
 | ASOs não aparecem no Chatwoot | Pipeline não chamou `espelhar_envio_sistema` | Verificar se `CHATWOOT_ATIVO=true` no `.env` do servidor |
+| Cliente recebe mensagem duplicada no WhatsApp | `CHATWOOT_INBOX_ID` aponta para inbox tipo "WhatsApp Cloud API" (canal nativo), que reenvia pela Meta ao espelhar | Recriar inbox como "API Channel" e atualizar `CHATWOOT_INBOX_ID` |
 | Bot: "Não encontrei nenhum funcionário" para qualquer nome | `SOC_CHAVE_FUNCIONARIOS` ausente no `.env` | Adicionar chave do exportador `192399` ao `.env` e reiniciar |
 | Bot: `[BOT] SOC retornou 0 registro(s)` nos logs | `SOC_EMPRESA` não configurado ou chave 192399 vinculada à empresa errada | Verificar `SOC_EMPRESA` no `.env` — o exportador 192399 exige `empresa=principal` |
 | Bot: `Não foi encontrado registro no SOC` | Número não cadastrado no exportador 215872 | Cadastrar o contato no SOC com TEL1/TEL2 correto |

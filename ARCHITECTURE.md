@@ -358,7 +358,9 @@ Implementado em `src/meta/whatsapp.py:enviar_pdfs_empresa_meta`. Se o primeiro e
 
 ## 8. Fluxo de mensagens WhatsApp ↔ Chatwoot
 
-O sistema tem **dois sentidos** de tráfego de mensagens e um registro automático de envios:
+> O Chatwoot em si (Docker, banco, worker) é um projeto separado deste repositório — `github.com/safehelp-agentes/ChatWoot`, em `/opt/safework/chatwoot` na VPS. Aqui documentamos só a integração (`src/integrations/chatwoot.py`, webhook em `bot/service.py`).
+
+O sistema tem **dois sentidos** de tráfego de mensagens e um registro automático de envios. Toda essa integração assume que a inbox usada é do tipo **"API Channel"** — um canal nativo (ex: "WhatsApp Cloud API") reenvia de fato pela Meta ao criar uma mensagem `outgoing` via API, causando entrega duplicada real ao cliente. Isso já causou duplicidade em produção quando a inbox "API Channel" original foi apagada e substituída por um canal nativo; a inbox foi recriada com o tipo correto — nunca aponte `CHATWOOT_INBOX_ID` para um canal nativo.
 
 ### 8.1. WhatsApp → Chatwoot (inbound)
 

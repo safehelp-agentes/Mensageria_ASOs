@@ -49,6 +49,8 @@ def _get_or_create_contact(phone: str, name: str = "") -> int | None:
             results = payload if isinstance(payload, list) else payload.get("contacts", [])
             if results:
                 return results[0]["id"]
+        else:
+            print(f"[CHATWOOT] Busca de contato HTTP {resp.status_code}: {resp.text[:300]}")
     except Exception as e:
         print(f"[CHATWOOT] Erro ao buscar contato: {e}")
 
@@ -61,6 +63,8 @@ def _get_or_create_contact(phone: str, name: str = "") -> int | None:
         )
         if resp.status_code in (200, 201):
             return resp.json().get("id")
+        else:
+            print(f"[CHATWOOT] Criação de contato HTTP {resp.status_code}: {resp.text[:300]}")
     except Exception as e:
         print(f"[CHATWOOT] Erro ao criar contato: {e}")
 
@@ -78,6 +82,8 @@ def _get_or_create_conversation(contact_id: int) -> int | None:
             for conv in resp.json().get("payload", []):
                 if conv.get("inbox_id") == _INBOX_ID and conv.get("status") == "open":
                     return conv["id"]
+        else:
+            print(f"[CHATWOOT] Busca de conversas HTTP {resp.status_code}: {resp.text[:300]}")
     except Exception as e:
         print(f"[CHATWOOT] Erro ao buscar conversas: {e}")
 
@@ -90,6 +96,8 @@ def _get_or_create_conversation(contact_id: int) -> int | None:
         )
         if resp.status_code in (200, 201):
             return resp.json().get("id")
+        else:
+            print(f"[CHATWOOT] Criação de conversa HTTP {resp.status_code}: {resp.text[:300]}")
     except Exception as e:
         print(f"[CHATWOOT] Erro ao criar conversa: {e}")
 
@@ -120,6 +128,8 @@ def _post_message(conv_id: int, content: str, message_type: str,
         )
         if resp.status_code in (200, 201):
             return resp.json().get("id")
+        else:
+            print(f"[CHATWOOT] Criação de mensagem HTTP {resp.status_code}: {resp.text[:300]}")
     except Exception as e:
         print(f"[CHATWOOT] Erro ao criar mensagem: {e}")
     return None

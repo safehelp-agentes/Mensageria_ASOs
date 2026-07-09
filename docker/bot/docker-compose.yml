@@ -30,7 +30,7 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.bot-chatwoot.rule=Host(`n8n.srv1564091.hstgr.cloud`) && PathPrefix(`/chatwoot`)"
       - "traefik.http.routers.bot-chatwoot.entrypoints=websecure"
-      - "traefik.http.routers.bot-chatwoot.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.bot-chatwoot.tls.certresolver=mytlschallenge"
       - "traefik.http.services.bot-chatwoot.loadbalancer.server.port=8001"
       - "traefik.docker.network=n8n_default"
 

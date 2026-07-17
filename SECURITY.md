@@ -35,6 +35,9 @@ git diff --staged
 | `SUPABASE_SECRET_KEY` | Backend/pipeline (cliente PostgREST) | Frontend, browser, repositório |
 | `META_WA_TOKEN` | Backend apenas | Logs, frontend, repositório |
 | `SOC_CHAVE_*` | Backend apenas | Logs, frontend, repositório |
+| `WEBHOOK_VERIFY_TOKEN` | Verificação do webhook Meta (Inbox) + painel Meta | Frontend, browser, repositório |
+
+> **Inbox:** o acesso ao dashboard é protegido por **Basic Auth no Traefik** (usuário/senha no label `basicauth.users` do `inbox/docker-compose.yml`, como hash apr1/bcrypt). O path `/webhook` fica fora do Basic Auth (a Meta não manda credenciais), protegido pelo `WEBHOOK_VERIFY_TOKEN`. O dashboard lê o Supabase com a `service_role` **server-side** — nunca no browser.
 
 ---
 
@@ -63,8 +66,9 @@ git push origin --force-with-lease
 
 ## Retenção de dados (LGPD)
 
-- O pipeline persiste no Supabase apenas o **estado de envio** dos ASOs (tabelas `empresas` e `asos_enviados`) — usado para deduplicação/idempotência. Não há histórico de conversas.
-- PDFs de ASOs **não são armazenados** — apenas transitam em memória/temp e são deletados após o envio
+- O pipeline persiste no Supabase apenas o **estado de envio** dos ASOs (tabelas `empresas` e `asos_enviados`) — usado para deduplicação/idempotência.
+- O **Inbox** persiste as respostas dos clientes na tabela `mensagens` (`direcao='inbound'`) — há, portanto, histórico de mensagens recebidas. Retenção atual: **guardar tudo** (sem expurgo). O conteúdo é de acesso interno e restrito (Basic Auth + `service_role` server-side).
+- PDFs de ASOs **não são armazenados** — apenas transitam em memória/temp e são deletados após o envio. O Inbox **não baixa mídia** recebida (guarda só metadados: tipo, legenda, nome do arquivo).
 
 ---
 

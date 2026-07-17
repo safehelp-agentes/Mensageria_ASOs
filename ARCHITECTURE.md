@@ -17,6 +17,7 @@ Para visão de produto e como rodar, veja o [README.md](README.md).
 7. [Estratégia de envio WhatsApp](#7-estratégia-de-envio-whatsapp)
 8. [Tratamento de erros e retries](#8-tratamento-de-erros-e-retries)
 9. [Decisões de design](#9-decisões-de-design)
+10. [Inbox — recepção e visualização de mensagens](#10-inbox--recepção-e-visualização-de-mensagens)
 
 ---
 
@@ -46,7 +47,7 @@ graph LR
     Meta -->|"PDFs"| Empresas
 ```
 
-> Fluxo **send-only**: o pipeline entrega o ASO e persiste o estado de envio. Não há coleta de respostas dos clientes (sem CRM, sem Chatwoot).
+> Fluxo do pipeline é **send-only**: entrega o ASO e persiste o estado de envio, sem nunca ler respostas. A recepção de respostas dos clientes é feita por um serviço **separado e read-only** (o **Inbox**, seção 10), que não realimenta o pipeline.
 
 ---
 
@@ -385,6 +386,56 @@ Garante reprodutibilidade: a próxima execução não vê PDFs de execuções an
 ### Por que separar `chave_aso` em três campos no banco?
 
 A chave composta `CD_EMPRESA|CD_GED|CD_ARQUIVO_GED` é ótima para uniqueness, mas terrível para queries do tipo "todos os ASOs da empresa X". Separar permite indexar e filtrar individualmente sem parsing.
+
+---
+
+## 10. Inbox — recepção e visualização de mensagens
+
+Serviço **independente** do pipeline (pasta `inbox/`), **read-only** do ponto de vista do negócio: recebe as respostas dos clientes e as exibe junto dos envios. Não altera o pipeline nem responde mensagens.
+
+### 10.1. Por que um app próprio (e não Chatwoot)
+
+Read-only, solo, baixo volume. Chatwoot exigiria infra pesada 24/7 e refatorar o pipeline de produção para os envios aparecerem nele. Um FastAPI enxuto que **lê o Supabase** já resolve.
+
+### 10.2. Fluxo do webhook (inbound)
+
+```mermaid
+sequenceDiagram
+    participant C as Cliente (WhatsApp)
+    participant M as Meta Cloud API
+    participant W as inbox/app.py (webhook)
+    participant SB as Supabase (mensagens)
+
+    C->>M: responde no WhatsApp
+    M->>W: POST /webhook (payload da mensagem)
+    W->>W: parse_webhook() — extrai número, tipo, conteúdo, wamid
+    W->>SB: wamid já existe?
+    alt novo
+        W->>SB: INSERT direcao='inbound'
+    else duplicado
+        W-->>W: ignora (idempotência no código)
+    end
+    W-->>M: 200 (sempre) — evita reenvio em massa
+```
+
+- **Verificação (GET /webhook):** responde ao `hub.challenge` se `hub.verify_token == WEBHOOK_VERIFY_TOKEN`; senão 403.
+- **Idempotência:** feita **no código** (checa `wamid` antes de inserir). Não há índice `UNIQUE` em `mensagens.wamid` porque o legado tem duplicados/nulos — criar o índice quebraria.
+- **`statuses` ignorados:** recibos de entrega/leitura dos nossos envios não são processados na v1.
+
+### 10.3. Reaproveitamento da tabela `mensagens`
+
+Não foi criada tabela nova. A `mensagens` (legado do bot removido) já tem o formato certo: `direcao`, `numero_whatsapp`, `tipo`, `conteudo`, `nome_arquivo`, `wamid`, `timestamp_meta` (em **milissegundos**). O webhook grava inbound aqui; o `nome_perfil` (push name) vai em `nome_empresa`, seguindo a convenção legada. A tabela não tem coluna para mídia/payload bruto — esses campos são descartados.
+
+### 10.4. Conversa por número (não por empresa)
+
+A chave de agrupamento é o **número de telefone**, como no WhatsApp. A empresa é só um rótulo resolvido na leitura, casando o número contra `asos_enviados.numero_destino` e `empresas.telefone`. Um número pode carregar N empresas (todas viram etiquetas) e continua sendo **uma thread só**. Sem match → thread aparece como "não associada".
+
+**Tolerância ao 9º dígito:** a Meta às vezes entrega o número sem o nono dígito. `variantes_numero()` gera as duas formas (com e sem o 9) e o casamento usa `in.(...)`; `chave_conversa()` normaliza para a forma mais longa, garantindo que envio e resposta caiam na mesma conversa.
+
+### 10.5. Dashboard e deploy
+
+- **Dashboard** (server-rendered, Jinja2): `/` lista conversas por número (última atividade, contagens, rótulos de empresa); `/conversa/{numero}` mostra a timeline mesclando envios (`asos_enviados`) e recebidas (`mensagens`). A `service_role` fica no backend — nada no browser.
+- **Deploy:** container na rede `n8n_default`, atrás do Traefik (`certresolver=mytlschallenge`), host `inbox.srv1564091.hstgr.cloud`. Dois routers no mesmo serviço: `/webhook` **sem** auth (a Meta não manda credenciais) e o resto com **Basic Auth** (middleware do Traefik). Código montado por volume `:ro` — `git pull` atualiza sem rebuild.
 
 ---
 

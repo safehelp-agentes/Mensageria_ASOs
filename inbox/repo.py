@@ -132,7 +132,7 @@ def inserir_inbound(msg: dict) -> str:
 # ── Leitura (dashboard) ──────────────────────────────────────────────────────
 
 def listar_conversas() -> list:
-    """Uma linha por número, juntando envios e recebidas, ordenada por atividade recente."""
+    """Uma entrada por número, juntando envios e recebidas, ordenada por atividade recente."""
     enviados  = _get_all("asos_enviados", {
         "select": "numero_destino,nome_empresa,codigo_empresa,created_at,data_envio"})
     recebidos = _get_all("mensagens", {
@@ -156,7 +156,7 @@ def listar_conversas() -> list:
         if not chave:
             return None
         return conversas.setdefault(chave, {
-            "numero": chave, "empresas": set(), "perfil": None,
+            "numero": chave, "codigo": "", "empresas": set(), "perfil": None,
             "enviadas": 0, "recebidas": 0,
             "ultimo_ts": None, "ultimo_preview": "", "ultimo_direcao": None,
         })
@@ -175,7 +175,10 @@ def listar_conversas() -> list:
         nome = (r.get("nome_empresa") or "").strip()
         if nome:
             slot["empresas"].add(nome)
-        _marcar(slot, _iso_para_ms(r.get("created_at")), "📄 ASO enviado", "outbound")
+        cod = (r.get("codigo_empresa") or "").strip()
+        if cod and "_" not in cod and not slot["codigo"]:
+            slot["codigo"] = cod
+        _marcar(slot, _iso_para_ms(r.get("created_at")), "ASO enviado", "outbound")
 
     for r in recebidos:
         slot = _slot(r.get("numero_whatsapp", ""))
@@ -187,64 +190,90 @@ def listar_conversas() -> list:
         preview = (r.get("conteudo") or f"[{r.get('tipo', 'mensagem')}]")[:80]
         _marcar(slot, ts, preview, "inbound")
 
-    # completa rótulos de empresa a partir do cadastro (números só com recebidas)
+    saida = []
     for chave, slot in conversas.items():
         slot["empresas"] |= idx_emp.get(chave, set())
-        slot["empresas"] = sorted(slot["empresas"])
+        empresas_lst = sorted(slot["empresas"])
+        saida.append({
+            "numero":      slot["numero"],
+            "codigo":      slot["codigo"],
+            "nome":        slot["perfil"] or (empresas_lst[0] if empresas_lst else slot["numero"]),
+            "empresas":    empresas_lst,
+            "tem_empresa": bool(empresas_lst),
+            "enviadas":    slot["enviadas"],
+            "recebidas":   slot["recebidas"],
+            "ts":          slot["ultimo_ts"],
+            "preview":     slot["ultimo_preview"],
+            "preview_dir": slot["ultimo_direcao"],
+        })
 
-    return sorted(conversas.values(),
-                  key=lambda c: c["ultimo_ts"] or 0, reverse=True)
+    return sorted(saida, key=lambda c: c["ts"] or 0, reverse=True)
 
 
-def obter_conversa(numero: str) -> tuple[dict, list]:
-    """Retorna (meta, eventos) de uma conversa (um número), em ordem cronológica."""
+def obter_conversa(numero: str) -> dict:
+    """Retorna {meta, eventos} de uma conversa (um número), em ordem cronológica."""
     filtro = _filtro_in(numero)
 
     enviados  = _get_all("asos_enviados", {
         "numero_destino": filtro,
-        "select": "nome_empresa,codigo_empresa,created_at,data_envio,status,nome_arquivo,wamid"})
+        "select": "nome_empresa,codigo_empresa,created_at,data_envio,status,nome_arquivo"})
     recebidos = _get_all("mensagens", {
         "direcao": "eq.inbound", "numero_whatsapp": filtro,
-        "select": "nome_empresa,conteudo,tipo,timestamp_meta,created_at,nome_arquivo,wamid"})
-    emp_rows  = _get_all("empresas", {"telefone": filtro, "select": "codigo,nome"})
+        "select": "nome_empresa,conteudo,tipo,timestamp_meta,created_at,nome_arquivo"})
+    emp_rows  = _get_all("empresas", {"telefone": filtro, "select": "codigo,nome,cnpj"})
 
-    eventos, empresas, perfil = [], set(), None
+    eventos, empresas, perfil, codigo, cnpj = [], set(), None, "", ""
 
     for r in enviados:
         nome = (r.get("nome_empresa") or "").strip()
         if nome:
             empresas.add(nome)
+        cod = (r.get("codigo_empresa") or "").strip()
+        if cod and "_" not in cod and not codigo:
+            codigo = cod
         eventos.append({
-            "direcao":  "outbound",
-            "ts":       _iso_para_ms(r.get("created_at")),
-            "tipo":     "documento",
-            "conteudo": r.get("nome_arquivo") or "ASO enviado",
-            "status":   r.get("status"),
+            "dir":     "out",
+            "ts":      _iso_para_ms(r.get("created_at")),
+            "tipo":    "document",                       # envio = template com PDF
+            "texto":   None,
+            "arquivo": r.get("nome_arquivo") or "ASO.pdf",
+            "status":  r.get("status"),
         })
 
     for r in recebidos:
-        perfil = perfil or (r.get("nome_empresa") or "").strip() or None
-        ts = r.get("timestamp_meta") or _iso_para_ms(r.get("created_at"))
+        perfil  = perfil or (r.get("nome_empresa") or "").strip() or None
+        ts      = r.get("timestamp_meta") or _iso_para_ms(r.get("created_at"))
         eventos.append({
-            "direcao":  "inbound",
-            "ts":       ts,
-            "tipo":     r.get("tipo") or "text",
-            "conteudo": r.get("conteudo") or r.get("nome_arquivo") or f"[{r.get('tipo', 'mensagem')}]",
-            "status":   None,
+            "dir":     "in",
+            "ts":      ts,
+            "tipo":    r.get("tipo") or "text",
+            "texto":   r.get("conteudo"),
+            "arquivo": r.get("nome_arquivo"),
+            "status":  None,
         })
 
     for e in emp_rows:
-        nome = (e.get("nome") or e.get("codigo") or "").strip()
+        nome = (e.get("nome") or "").strip()
         if nome:
             empresas.add(nome)
+        if not codigo and (e.get("codigo") or "").strip():
+            codigo = e["codigo"].strip()
+        if not cnpj and (e.get("cnpj") or "").strip():
+            cnpj = e["cnpj"].strip()
 
-    eventos.sort(key=lambda e: e["ts"] or 0)
+    eventos.sort(key=lambda ev: ev["ts"] or 0)
+    empresas_lst = sorted(empresas)
 
-    meta = {
-        "numero":    chave_conversa(numero),
-        "empresas":  sorted(empresas),
-        "perfil":    perfil,
-        "enviadas":  len(enviados),
-        "recebidas": len(recebidos),
+    return {
+        "meta": {
+            "numero":    chave_conversa(numero),
+            "nome":      perfil or (empresas_lst[0] if empresas_lst else chave_conversa(numero)),
+            "empresas":  empresas_lst,
+            "codigo":    codigo,
+            "cnpj":      cnpj,
+            "perfil":    perfil,
+            "enviadas":  len(enviados),
+            "recebidas": len(recebidos),
+        },
+        "eventos": eventos,
     }
-    return meta, eventos

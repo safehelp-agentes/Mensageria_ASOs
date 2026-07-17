@@ -51,8 +51,20 @@ Este sistema resolve isso com um **pipeline automático**: todo dia útil busca 
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
 
-O pipeline é send-only: entrega o ASO via Meta e marca o envio no Supabase.
-Não há CRM nem registro em Chatwoot — respostas dos clientes não são coletadas.
+┌──────────────────────────── INBOX (visualizador read-only) ─────────────────┐
+│                                                                              │
+│  Cliente responde no WhatsApp ──► Meta ──► webhook ──► inbox/ (FastAPI)     │
+│                                                    │                         │
+│                                  grava inbound em `mensagens` (Supabase)     │
+│                                                    │                         │
+│  Dashboard ◄── junta asos_enviados (enviadas) + mensagens (recebidas)       │
+│              por número de telefone, numa timeline por conversa             │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+O pipeline é send-only: entrega o ASO e persiste o estado de envio, sem nunca ler
+respostas. O Inbox é um serviço SEPARADO e read-only — recebe as respostas dos
+clientes via webhook da Meta e as exibe junto dos envios, sem realimentar o pipeline.
 ```
 
 ---
@@ -202,6 +214,41 @@ python src/soc/cadastra_contatos.py
 
 ---
 
+## Inbox — visualizador de mensagens
+
+Serviço **read-only** e **separado do pipeline**, para ver num só lugar o que o pipeline enviou e o que os clientes responderam no WhatsApp, organizado por **número de telefone** (uma conversa por número, estilo WhatsApp). Não responde mensagens, não atribui atendimento — só visualiza.
+
+Duas partes num único serviço FastAPI (`inbox/`):
+
+1. **Webhook da Meta** — recebe as respostas dos clientes e grava na tabela `mensagens` (`direcao='inbound'`). Idempotente por `wamid` (a Meta reenvia). O pipeline de envio **não é alterado**.
+2. **Dashboard** — junta `asos_enviados` (enviadas) e `mensagens` (recebidas) por número, numa timeline por conversa. Server-rendered: a `service_role` fica no backend, nunca no browser.
+
+> A empresa é apenas um **rótulo** resolvido na leitura (via `asos_enviados`/`empresas`). Números da Meta às vezes vêm sem o 9º dígito; o casamento tolera isso (compara as variantes com e sem o 9).
+
+### Rodar localmente
+
+```bash
+pip install -r inbox/requirements.txt
+uvicorn inbox.app:app --host 0.0.0.0 --port 8002 --reload
+# dashboard em http://localhost:8002/ · webhook em /webhook
+```
+
+### Deploy (VPS, atrás do Traefik)
+
+```bash
+# .env da VPS precisa ter WEBHOOK_VERIFY_TOKEN
+cd /opt/safework/envio_ASO/inbox
+docker compose up -d --build
+```
+
+- Host: `https://inbox.srv1564091.hstgr.cloud` (rede `n8n_default`, certresolver `mytlschallenge`).
+- Traefik: `/webhook` **sem** auth (a Meta não manda credenciais); resto com **Basic Auth**.
+- No painel Meta: Callback URL `https://inbox.srv1564091.hstgr.cloud/webhook`, colar o `WEBHOOK_VERIFY_TOKEN` e **assinar o campo `messages`**.
+
+> A tabela `mensagens` não tem coluna para mídia/payload bruto — o Inbox guarda tipo, legenda e nome do arquivo, mas não baixa a mídia em si.
+
+---
+
 ## Configuração
 
 Todas as variáveis vivem no `.env`. Use `.env.example` como base.
@@ -239,6 +286,14 @@ Todas as variáveis vivem no `.env`. Use `.env.example` como base.
 | `SUPABASE_SECRET_KEY` | sim | `anon/public` key — usada pelo cliente `src/integrations/supabase.py` |
 
 > ⚠️ **Nunca exponha a `service_role` key em frontend/browser** — ela bypassa o Row Level Security e daria acesso total ao banco.
+
+### Inbox (visualizador read-only)
+
+| Variável | Obrigatório | Descrição |
+|---|---|---|
+| `WEBHOOK_VERIFY_TOKEN` | sim | Verify token do webhook da Meta. O **mesmo** valor vai no painel Meta (WhatsApp → Configuration → Webhook). Gere com `python -c "import secrets; print('safework_inbox_' + secrets.token_urlsafe(24))"` |
+
+O login do dashboard **não** usa variável de ambiente — é feito por **Basic Auth no Traefik** (usuário/senha no label `basicauth.users` do `inbox/docker-compose.yml`). O dashboard lê o Supabase pelo backend com a `service_role`; nada de credencial no browser.
 
 ### SOC — WebService ImportacaoEmpresa (SOAP)
 
@@ -278,6 +333,15 @@ envio_ASO/
 │
 ├── testes/                        # Scripts de teste manual (flags hardcoded no topo, sem argparse)
 │   └── teste_funcionario_guia.py         # Testa exportador 216658 (Funcionário e Guia)
+│
+├── inbox/                         # Visualizador read-only (serviço à parte, não toca no pipeline)
+│   ├── app.py                     # FastAPI: webhook Meta + dashboard
+│   ├── webhook.py                 # Parser do payload da Meta (mensagens recebidas)
+│   ├── repo.py                    # Supabase: grava inbound + junta envios/recebidas por número
+│   ├── templates/                 # UI (lista de conversas + timeline por número)
+│   ├── Dockerfile
+│   ├── docker-compose.yml         # Traefik: /webhook sem auth, resto com Basic Auth
+│   └── requirements.txt
 │
 └── src/
     ├── soc/

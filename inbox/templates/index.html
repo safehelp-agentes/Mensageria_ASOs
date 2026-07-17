@@ -334,24 +334,28 @@ function renderChat(meta, eventos){
   if(c) c.scrollTop = c.scrollHeight;
 }
 
+function docCard(nome){
+  const n = nome || 'Documento';
+  const meta = /\.pdf$/i.test(n) ? 'PDF · ASO' : 'Documento';
+  return '<div class="doc-bubble">'
+    + '<div class="doc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>'
+    + '<div class="doc-info"><div class="doc-name">'+esc(n)+'</div><div class="doc-meta">'+meta+'</div></div>'
+    + '</div>';
+}
+
 function renderBolha(ev){
   const dir  = ev.dir==='out' ? 'out' : 'in';
   const hora = fmtHora(ev.ts);
   const check = dir==='out'
     ? '<span class="bubble-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>'
     : '';
-  let corpo;
-  const ehDoc = ev.tipo==='document' || (ev.arquivo && !ev.texto);
-  if(ehDoc){
-    const nome = ev.arquivo || 'Documento';
-    const meta = /\.pdf$/i.test(nome) ? 'PDF · ASO' : 'Documento';
-    corpo = '<div class="doc-bubble">'
-      + '<div class="doc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>'
-      + '<div class="doc-info"><div class="doc-name">'+esc(nome)+'</div><div class="doc-meta">'+meta+'</div></div>'
-      + '</div>';
-  }else{
-    const txt = ev.texto || (ev.tipo && ev.tipo!=='text' ? '['+ev.tipo+']' : '');
-    corpo = '<div class="bubble-text">'+esc(txt)+'</div>';
+  const mostrarDoc = ev.tipo==='document' || (ev.arquivo && !ev.texto);
+  let corpo = '';
+  if(mostrarDoc) corpo += docCard(ev.arquivo);
+  if(ev.texto)   corpo += '<div class="bubble-text"'+(mostrarDoc?' style="margin-top:8px"':'')+'>'+esc(ev.texto)+'</div>';
+  if(!corpo){
+    const t = ev.tipo && ev.tipo!=='text' ? '['+ev.tipo+']' : '';
+    corpo = '<div class="bubble-text">'+esc(t)+'</div>';
   }
   return '<div class="msg-row '+dir+'"><div class="msg-stack"><div class="bubble">'
     + corpo

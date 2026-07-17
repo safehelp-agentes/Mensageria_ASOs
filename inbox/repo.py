@@ -10,7 +10,18 @@ import os
 import requests
 from datetime import datetime, timezone
 
-from src.utils.helpers import _requisicao_com_retry, normalizar_numero_whatsapp
+from src.utils.helpers import _requisicao_com_retry, normalizar_numero_whatsapp, sanitizar_nome
+
+# Corpo do template aprovado na Meta (o que o cliente efetivamente recebe).
+# {{1}} = nome da empresa, {{2}} = data de emissão.
+CORPO_TEMPLATE = (
+    "Prezado(a), segue em anexo o(s) ASO(s) (Atestado de Saúde Ocupacional) "
+    "referente(s) ao(s) exame(s) realizado(s).\n\n"
+    "Empresa: {empresa}\n"
+    "Data de emissão: {data}\n\n"
+    "Este documento é de caráter oficial. Em caso de dúvidas, entre em contato "
+    "com o setor de saúde ocupacional responsável."
+)
 
 SUPABASE_URL         = os.getenv("SUPABASE_URL", "").strip()
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "").strip()
@@ -88,6 +99,16 @@ def _iso_para_ms(iso: str) -> int | None:
         return int(dt.timestamp() * 1000)
     except Exception:
         return None
+
+
+def _iso_para_br(iso: str) -> str:
+    """YYYY-MM-DD (ou DD/MM/YYYY) -> DD/MM/YYYY."""
+    if not iso:
+        return ""
+    p = str(iso).strip().replace("/", "-").split("-")
+    if len(p) == 3 and len(p[0]) == 4:
+        return f"{p[2]}/{p[1]}/{p[0]}"
+    return str(iso).strip()
 
 
 # ── Gravação (webhook) ───────────────────────────────────────────────────────
@@ -216,7 +237,7 @@ def obter_conversa(numero: str) -> dict:
 
     enviados  = _get_all("asos_enviados", {
         "numero_destino": filtro,
-        "select": "nome_empresa,codigo_empresa,created_at,data_envio,status,nome_arquivo"})
+        "select": "nome_empresa,codigo_empresa,created_at,data_envio,data_emissao,status,nome_arquivo"})
     recebidos = _get_all("mensagens", {
         "direcao": "eq.inbound", "numero_whatsapp": filtro,
         "select": "nome_empresa,conteudo,tipo,timestamp_meta,created_at,nome_arquivo"})
@@ -231,12 +252,15 @@ def obter_conversa(numero: str) -> dict:
         cod = (r.get("codigo_empresa") or "").strip()
         if cod and "_" not in cod and not codigo:
             codigo = cod
+        data_br = _iso_para_br(r.get("data_emissao"))
+        arquivo = r.get("nome_arquivo") or (
+            f"ASOs_{sanitizar_nome(nome) or 'empresa'}_{data_br.replace('/', '-')}.pdf")
         eventos.append({
             "dir":     "out",
             "ts":      _iso_para_ms(r.get("created_at")),
-            "tipo":    "document",                       # envio = template com PDF
-            "texto":   None,
-            "arquivo": r.get("nome_arquivo") or "ASO.pdf",
+            "tipo":    "document",                       # envio = template aprovado + PDF
+            "texto":   CORPO_TEMPLATE.format(empresa=nome or "—", data=data_br or "—"),
+            "arquivo": arquivo,
             "status":  r.get("status"),
         })
 

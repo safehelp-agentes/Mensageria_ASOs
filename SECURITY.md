@@ -13,7 +13,6 @@ Este sistema processa **dados de saúde ocupacional (ASOs)**, classificados como
 | `.env` | Todas as chaves de API e senhas |
 | `service_account*.json` | Chave privada Google Service Account |
 | `*.pem`, `*.key`, `*.p12` | Certificados e chaves privadas |
-| `index.html` após `build.py` | Contém chave Supabase embutida |
 | `output/`, `data/*.json` | Podem conter PDFs ou dados de funcionários |
 
 Verifique antes de qualquer commit:
@@ -32,10 +31,9 @@ git diff --staged
 
 | Chave | Onde usar | Nunca usar em |
 |---|---|---|
-| `SUPABASE_SERVICE_KEY` | Backend/pipeline (server-side) | Frontend, browser, `index.html` |
-| `SUPABASE_ANON_KEY` | Frontend CRM (`build.py` → `index.html`) | Operações administrativas |
+| `SUPABASE_SERVICE_KEY` | Backend/pipeline (server-side) | Frontend, browser, repositório |
+| `SUPABASE_SECRET_KEY` | Backend/pipeline (cliente PostgREST) | Frontend, browser, repositório |
 | `META_WA_TOKEN` | Backend apenas | Logs, frontend, repositório |
-| `GROQ_API_KEY` | Backend apenas | Logs, frontend, repositório |
 | `SOC_CHAVE_*` | Backend apenas | Logs, frontend, repositório |
 
 ---
@@ -65,15 +63,8 @@ git push origin --force-with-lease
 
 ## Retenção de dados (LGPD)
 
-- Conversas do bot são armazenadas no Supabase por **90 dias**
-- Após esse período, devem ser deletadas via rotina automatizada
+- O pipeline persiste no Supabase apenas o **estado de envio** dos ASOs (tabelas `empresas` e `asos_enviados`) — usado para deduplicação/idempotência. Não há histórico de conversas.
 - PDFs de ASOs **não são armazenados** — apenas transitam em memória/temp e são deletados após o envio
-
-```sql
--- Executar periodicamente no Supabase (ou via pg_cron)
-DELETE FROM conversas_bot WHERE updated_at < NOW() - INTERVAL '90 days';
-DELETE FROM mensagens    WHERE created_at  < NOW() - INTERVAL '90 days';
-```
 
 ---
 

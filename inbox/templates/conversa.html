@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ meta.perfil or meta.numero }} — Inbox SafeWork</title>
+  <style>
+    :root { --verde:#075e54; --bg:#efeae2; --out:#d9fdd3; --in:#fff; --txt:#111; --sub:#667; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--txt); }
+    header { background:var(--verde); color:#fff; padding:10px 16px; position:sticky; top:0; z-index:2;
+             display:flex; align-items:center; gap:12px; }
+    header a.voltar { color:#fff; text-decoration:none; font-size:22px; line-height:1; }
+    header .info h1 { margin:0; font-size:16px; font-weight:600; }
+    header .info .sub { font-size:12px; opacity:.85; margin-top:1px; }
+    .tags { display:flex; flex-wrap:wrap; gap:4px; margin-top:3px; }
+    .tag { font-size:11px; background:rgba(255,255,255,.18); padding:1px 7px; border-radius:10px; }
+    .wrap { max-width:820px; margin:0 auto; padding:16px 12px 40px; }
+    .erro { background:#fdecea; color:#b71c1c; border:1px solid #f5c6cb; padding:10px 14px; border-radius:8px; font-size:14px; }
+    .vazio { text-align:center; color:var(--sub); padding:40px; }
+    .msg { max-width:75%; padding:7px 10px 5px; border-radius:8px; margin:6px 0; font-size:14px;
+           box-shadow:0 1px .5px rgba(0,0,0,.12); position:relative; word-wrap:break-word; white-space:pre-wrap; }
+    .msg.inbound  { background:var(--in);  margin-right:auto; border-top-left-radius:0; }
+    .msg.outbound { background:var(--out); margin-left:auto;  border-top-right-radius:0; }
+    .msg .rodape { font-size:10px; color:var(--sub); text-align:right; margin-top:3px; }
+    .msg .status { color:var(--verde); }
+    .tipo { font-size:11px; color:var(--sub); font-style:italic; }
+    .dia { text-align:center; margin:14px 0; }
+    .dia span { background:#d5e8df; color:#3a5; font-size:12px; padding:3px 10px; border-radius:8px; }
+  </style>
+</head>
+<body>
+  <header>
+    <a class="voltar" href="/" title="Voltar">←</a>
+    <div class="info">
+      <h1>{{ meta.perfil or (meta.empresas[0] if meta.empresas else meta.numero) }}</h1>
+      <div class="sub">{{ meta.numero }} · {{ meta.enviadas }} enviada(s) · {{ meta.recebidas }} recebida(s)</div>
+      {% if meta.empresas %}
+      <div class="tags">{% for e in meta.empresas %}<span class="tag">{{ e }}</span>{% endfor %}</div>
+      {% endif %}
+    </div>
+  </header>
+  <div class="wrap">
+    {% if erro %}<div class="erro">Erro ao carregar: {{ erro }}</div>{% endif %}
+    {% if not eventos and not erro %}<div class="vazio">Sem mensagens nesta conversa.</div>{% endif %}
+    {% for ev in eventos %}
+      <div class="msg {{ ev.direcao }}">
+        {% if ev.direcao == 'inbound' and ev.tipo != 'text' %}<div class="tipo">[{{ ev.tipo }}]</div>{% endif %}
+        {% if ev.direcao == 'outbound' %}📄 {% endif %}{{ ev.conteudo }}
+        <div class="rodape">
+          {{ ev.ts | dtfmt }}
+          {% if ev.status %}· <span class="status">{{ ev.status }}</span>{% endif %}
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+</body>
+</html>

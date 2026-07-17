@@ -28,8 +28,13 @@ def _sincronizar_empresas_completo(empresas_soc: list, dados_supabase: dict) -> 
     Não toca em telefone_escolhido nem bloqueada — esses campos são exclusivos do CRM.
     """
     atualizadas = sem_tel_resolvidas = 0
+    total = len(empresas_soc)
+    print(f"[SUPABASE] Sincronizando {total} empresa(s) com o SOC...")
 
-    for emp in empresas_soc:
+    for idx, emp in enumerate(empresas_soc, start=1):
+        if idx % 25 == 0 or idx == total:
+            print(f"  [sync {idx}/{total}] atualizadas: {atualizadas} | telefones preenchidos: {sem_tel_resolvidas}")
+
         codigo = str(emp.get("CODIGO", "")).strip()
         if not codigo:
             continue

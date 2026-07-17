@@ -31,7 +31,6 @@ from src.integrations.supabase import (
     upsert_empresa,
     buscar_chaves_enviadas,
     marcar_aso_enviado,
-    registrar_mensagem_outbound,
     salvar_aso_pendente,
     buscar_asos_pendentes,
     buscar_dados_empresas,
@@ -139,25 +138,6 @@ def _processar_grupo_empresas(grupos: dict, data_referencia: str, config_empresa
                                 data_emissao   = data_emissao,
                                 numero_destino = numero_destino,
                             )
-
-                    for r in resp_meta.get("respostas", []):
-                        if not r.get("sucesso"):
-                            continue
-                        try:
-                            wamid = (
-                                r.get("resposta", {})
-                                 .get("messages", [{}])[0]
-                                 .get("id", "")
-                            )
-                        except (IndexError, AttributeError):
-                            wamid = ""
-                        registrar_mensagem_outbound(
-                            codigo_empresa = codigo_empresa,
-                            nome_empresa   = nome_empresa,
-                            numero         = numero_destino,
-                            nome_arquivo   = r.get("arquivo", ""),
-                            wamid          = wamid,
-                        )
 
             except Exception as e:
                 resultado["meta_erro"] = str(e)

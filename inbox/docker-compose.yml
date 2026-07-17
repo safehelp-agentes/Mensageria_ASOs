@@ -1,0 +1,64 @@
+# =============================================================================
+# SafeWork Inbox — webhook da Meta + dashboard read-only, atrás do Traefik
+#
+# Host:        https://inbox.srv1564091.hstgr.cloud   (wildcard DNS já resolve)
+# Rede:        n8n_default  (mesma do stack n8n/Traefik — externa)
+# certresolver: mytlschallenge   |   entrypoint: websecure
+#
+# Dois routers no MESMO serviço:
+#   - inbox-webhook  → /webhook          SEM auth (a Meta não manda credenciais)
+#   - inbox-dash     → resto do site     COM Basic Auth (middleware inbox-auth)
+#
+# Primeiro uso (na VPS):
+#   cd /opt/safework/envio_ASO/inbox
+#   docker compose up -d --build
+# Atualizar código depois: git pull  (o volume :ro reflete na hora; sem rebuild)
+# Só rebuilda se mudar inbox/requirements.txt:  docker compose up -d --build
+# =============================================================================
+
+services:
+  inbox:
+    build:
+      context: /opt/safework/envio_ASO
+      dockerfile: inbox/Dockerfile
+    image: safework-inbox
+    working_dir: /app
+    volumes:
+      - /opt/safework/envio_ASO:/app:ro
+    env_file:
+      - /opt/safework/envio_ASO/.env
+    restart: unless-stopped
+    networks:
+      traefik_net:
+        aliases:
+          - inbox
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=n8n_default"
+
+      # ── Router do webhook (SEM auth, prioridade maior) ──────────────────────
+      - "traefik.http.routers.inbox-webhook.rule=Host(`inbox.srv1564091.hstgr.cloud`) && PathPrefix(`/webhook`)"
+      - "traefik.http.routers.inbox-webhook.entrypoints=websecure"
+      - "traefik.http.routers.inbox-webhook.tls.certresolver=mytlschallenge"
+      - "traefik.http.routers.inbox-webhook.priority=100"
+      - "traefik.http.routers.inbox-webhook.service=inbox-svc"
+
+      # ── Router do dashboard (COM Basic Auth) ────────────────────────────────
+      - "traefik.http.routers.inbox-dash.rule=Host(`inbox.srv1564091.hstgr.cloud`)"
+      - "traefik.http.routers.inbox-dash.entrypoints=websecure"
+      - "traefik.http.routers.inbox-dash.tls.certresolver=mytlschallenge"
+      - "traefik.http.routers.inbox-dash.priority=1"
+      - "traefik.http.routers.inbox-dash.middlewares=inbox-auth"
+      - "traefik.http.routers.inbox-dash.service=inbox-svc"
+
+      # ── Basic Auth (usuário: safework) ──────────────────────────────────────
+      # Trocar a senha: htpasswd -nbB safework NOVA_SENHA  (dobre os $ → $$ aqui)
+      - "traefik.http.middlewares.inbox-auth.basicauth.users=safework:$$apr1$$7APes9Gc$$80bKz63XscYGYo7pVsue3/"
+
+      # ── Serviço (porta interna do uvicorn) ──────────────────────────────────
+      - "traefik.http.services.inbox-svc.loadbalancer.server.port=8002"
+
+networks:
+  traefik_net:
+    external: true
+    name: n8n_default

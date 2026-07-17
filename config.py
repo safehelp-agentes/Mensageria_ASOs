@@ -23,10 +23,6 @@ PASTA_TEMP           = os.path.join(BASE_DIR, "output", "temp_asos")
 PASTA_DEBUG          = os.path.join(BASE_DIR, "output", "debug_downloads")
 PASTA_SAIDA_LISTAGEM = os.path.join(BASE_DIR, "output", "saida_asos")
 
-# ── Arquivos de estado ─────────────────────────────────────────────────────────
-ARQUIVO_PENDENTES = os.path.join(BASE_DIR, "data", "pendentes.json")
-ARQUIVO_ERROS_ASO = os.path.join(BASE_DIR, "data", "erros_aso.json")
-
 # ── SOC API ────────────────────────────────────────────────────────────────────
 SOC_URL          = (os.getenv("SOC_URL") or "https://ws1.soc.com.br/WebSoc/exportadados").strip()
 SOC_DOWNLOAD_URL = "https://ws1.soc.com.br/WSSoc/DownloadArquivosWs"

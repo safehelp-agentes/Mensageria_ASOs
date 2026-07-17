@@ -9,17 +9,8 @@ SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "").strip()  # service_
 SUPABASE_ATIVO       = bool(SUPABASE_URL and SUPABASE_SECRET_KEY)
 
 
-def _headers_read():
-    """Leituras: usa a chave anon (respeita RLS de SELECT)."""
-    return {
-        "apikey":        SUPABASE_SECRET_KEY,
-        "Authorization": f"Bearer {SUPABASE_SECRET_KEY}",
-        "Content-Type":  "application/json",
-    }
-
-
-def _headers_write():
-    """Escritas: usa service_role para bypassar RLS de INSERT/UPDATE."""
+def _headers():
+    """Backend confiável: usa service_role (bypassa RLS) para leituras e escritas."""
     key = SUPABASE_SERVICE_KEY or SUPABASE_SECRET_KEY
     return {
         "apikey":        key,
@@ -60,7 +51,7 @@ def verificar_conectividade() -> tuple[bool, str]:
         resp = _requisicao_com_retry(
             requests.get,
             _url("empresas"),
-            headers=_headers_write(),
+            headers=_headers(),
             params={"select": "codigo", "limit": "1"},
             timeout=10,
         )
@@ -80,7 +71,7 @@ def upsert_empresa(codigo: str, nome: str, cnpj: str = "", telefone: str = ""):
         resp = _requisicao_com_retry(
             requests.post,
             _url("empresas"),
-            headers={**_headers_write(), "Prefer": "resolution=merge-duplicates,return=minimal"},
+            headers={**_headers(), "Prefer": "resolution=merge-duplicates,return=minimal"},
             params={"on_conflict": "codigo"},
             json={"codigo": codigo, "nome": nome, "cnpj": cnpj, "telefone": telefone},
             timeout=10,
@@ -89,42 +80,6 @@ def upsert_empresa(codigo: str, nome: str, cnpj: str = "", telefone: str = ""):
             print(f"[SUPABASE] Erro upsert empresa {codigo}: {resp.text[:200]}")
     except Exception as e:
         print(f"[SUPABASE] Erro upsert empresa: {e}")
-
-
-def sincronizar_empresas_soc(empresas: list) -> None:
-    """Insere no Supabase as empresas do SOC que ainda não existem. Nunca altera registros existentes."""
-    if not SUPABASE_ATIVO or not empresas:
-        return
-
-    registros = []
-    for emp in empresas:
-        codigo = str(emp.get("CODIGO", "")).strip()
-        if not codigo:
-            continue
-        registros.append({
-            "codigo": codigo,
-            "nome":   (emp.get("RAZAOSOCIAL") or emp.get("NOMEABREVIADO") or "").strip(),
-            "cnpj":   str(emp.get("CNPJ", "")).strip(),
-        })
-
-    if not registros:
-        return
-
-    try:
-        resp = _requisicao_com_retry(
-            requests.post,
-            _url("empresas"),
-            headers={**_headers_write(), "Prefer": "resolution=merge-duplicates,return=minimal"},
-            params={"on_conflict": "codigo"},
-            json=registros,
-            timeout=30,
-        )
-        if resp.status_code >= 300:
-            print(f"[SUPABASE] Erro ao sincronizar empresas: {resp.text[:200]}")
-        else:
-            print(f"[SUPABASE] Sincronização de empresas concluída ({len(registros)} verificadas)")
-    except Exception as e:
-        print(f"[SUPABASE] Erro ao sincronizar empresas: {e}")
 
 
 # ── ASOs enviados ─────────────────────────────────────────
@@ -137,7 +92,7 @@ def buscar_chaves_enviadas() -> set:
         resp = _requisicao_com_retry(
             requests.get,
             _url("asos_enviados"),
-            headers=_headers_write(),
+            headers=_headers(),
             params={"enviado": "eq.true", "select": "chave_aso"},
             timeout=15,
         )
@@ -166,7 +121,7 @@ def marcar_aso_enviado(
         resp = _requisicao_com_retry(
             requests.post,
             _url("asos_enviados"),
-            headers={**_headers_write(), "Prefer": "resolution=merge-duplicates,return=minimal"},
+            headers={**_headers(), "Prefer": "resolution=merge-duplicates,return=minimal"},
             params={"on_conflict": "chave_aso"},
             json={
                 "chave_aso":      chave,
@@ -202,7 +157,7 @@ def salvar_aso_pendente(
         resp = _requisicao_com_retry(
             requests.post,
             _url("asos_enviados"),
-            headers={**_headers_write(), "Prefer": "resolution=merge-duplicates,return=minimal"},
+            headers={**_headers(), "Prefer": "resolution=merge-duplicates,return=minimal"},
             params={"on_conflict": "chave_aso"},
             json={
                 "chave_aso":      chave,
@@ -230,7 +185,7 @@ def buscar_asos_pendentes() -> list:
         resp = _requisicao_com_retry(
             requests.get,
             _url("asos_enviados"),
-            headers=_headers_write(),
+            headers=_headers(),
             params={
                 "enviado": "eq.false",
                 "select":  "chave_aso,codigo_empresa,nome_empresa,data_emissao,numero_destino,status",
@@ -247,34 +202,6 @@ def buscar_asos_pendentes() -> list:
         return []
 
 
-def buscar_config_empresas() -> dict:
-    """Retorna {codigo: {bloqueada, telefone_escolhido}} para cada empresa cadastrada."""
-    if not SUPABASE_ATIVO:
-        return {}
-    try:
-        resp = _requisicao_com_retry(
-            requests.get,
-            _url("empresas"),
-            headers=_headers_write(),
-            params={"select": "codigo,bloqueada,telefone_escolhido"},
-            timeout=15,
-        )
-        if resp.status_code >= 300:
-            print(f"[SUPABASE] Erro buscar config empresas: {resp.text[:200]}")
-            return {}
-        return {
-            row["codigo"]: {
-                "bloqueada":          bool(row.get("bloqueada", False)),
-                "telefone_escolhido": (row.get("telefone_escolhido") or "").strip(),
-            }
-            for row in resp.json()
-            if row.get("codigo")
-        }
-    except Exception as e:
-        print(f"[SUPABASE] Erro buscar config empresas: {e}")
-        return {}
-
-
 def buscar_dados_empresas() -> dict:
     """Retorna {codigo: {nome, cnpj, telefone, bloqueada, telefone_escolhido}} para todas as empresas."""
     if not SUPABASE_ATIVO:
@@ -283,7 +210,7 @@ def buscar_dados_empresas() -> dict:
         resp = _requisicao_com_retry(
             requests.get,
             _url("empresas"),
-            headers=_headers_write(),
+            headers=_headers(),
             params={"select": "codigo,nome,cnpj,telefone,bloqueada,telefone_escolhido"},
             timeout=15,
         )
@@ -304,72 +231,3 @@ def buscar_dados_empresas() -> dict:
     except Exception as e:
         print(f"[SUPABASE] Erro buscar dados empresas: {e}")
         return {}
-
-
-# ── Mensagens outbound ────────────────────────────────────
-
-def registrar_mensagem_outbound(
-    codigo_empresa: str,
-    nome_empresa:   str,
-    numero:         str,
-    nome_arquivo:   str,
-    wamid:          str = "",
-):
-    if not SUPABASE_ATIVO:
-        return
-    try:
-        resp = _requisicao_com_retry(
-            requests.post,
-            _url("mensagens"),
-            headers={**_headers_write(), "Prefer": "return=minimal"},
-            json={
-                "codigo_empresa":  codigo_empresa,
-                "nome_empresa":    nome_empresa,
-                "numero_whatsapp": numero,
-                "direcao":         "outbound",
-                "tipo":            "document",
-                "conteudo":        f"ASO enviado: {nome_arquivo}",
-                "nome_arquivo":    nome_arquivo,
-                "wamid":           wamid,
-            },
-            timeout=10,
-        )
-        if resp.status_code >= 300:
-            print(f"[SUPABASE] Erro registrar mensagem outbound: {resp.text[:200]}")
-    except Exception as e:
-        print(f"[SUPABASE] Erro registrar mensagem outbound: {e}")
-
-
-# ── Mensagens inbound (chamado pelo n8n via HTTP) ─────────
-
-def registrar_mensagem_inbound(
-    numero:         str,
-    conteudo:       str,
-    wamid:          str = "",
-    timestamp:      int = None,
-    nome_empresa:   str = "",
-    codigo_empresa: str = "",
-):
-    if not SUPABASE_ATIVO:
-        return
-    try:
-        resp = _requisicao_com_retry(
-            requests.post,
-            _url("mensagens"),
-            headers={**_headers_write(), "Prefer": "return=minimal"},
-            json={
-                "codigo_empresa":  codigo_empresa,
-                "nome_empresa":    nome_empresa,
-                "numero_whatsapp": numero,
-                "direcao":         "inbound",
-                "tipo":            "text",
-                "conteudo":        conteudo,
-                "wamid":           wamid,
-                "timestamp_meta":  timestamp,
-            },
-            timeout=10,
-        )
-        if resp.status_code >= 300:
-            print(f"[SUPABASE] Erro registrar mensagem inbound: {resp.text[:200]}")
-    except Exception as e:
-        print(f"[SUPABASE] Erro registrar mensagem inbound: {e}")

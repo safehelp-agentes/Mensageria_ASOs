@@ -1,0 +1,6 @@
+# Inbox — serviço de webhook + dashboard (separado do pipeline)
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+jinja2>=3.1.0
+requests>=2.31.0
+python-dotenv>=1.0.0

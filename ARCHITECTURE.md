@@ -15,9 +15,8 @@ Para visão de produto e como rodar, veja o [README.md](README.md).
 5. [Modelo de dados (Supabase)](#5-modelo-de-dados-supabase)
 6. [Integração com a API do SOC](#6-integração-com-a-api-do-soc)
 7. [Estratégia de envio WhatsApp](#7-estratégia-de-envio-whatsapp)
-8. [Webhook inbound (Meta → CRM)](#8-webhook-inbound-meta-crm)
-9. [Tratamento de erros e retries](#9-tratamento-de-erros-e-retries)
-10. [Decisões de design](#10-decisões-de-design)
+8. [Tratamento de erros e retries](#8-tratamento-de-erros-e-retries)
+9. [Decisões de design](#9-decisões-de-design)
 
 ---
 
@@ -37,20 +36,17 @@ graph LR
     end
 
     subgraph Consumo["👀 Consumo"]
-        CRM[chat.html<br/>CRM SafeWork]
         Empresas[🏢 Empresas clientes<br/>WhatsApp]
     end
 
     Main -->|"1. lista empresas<br/>2. busca ASOs<br/>3. baixa PDFs"| SOC
     Main -->|"4. upload + send"| Meta
-    Main -->|"5. persiste estado"| SB
+    Main -->|"5. persiste estado (dedup)"| SB
     Main -->|"6. relatório de erros"| Gmail
     Meta -->|"PDFs"| Empresas
-    Empresas -->|"respostas"| Meta
-    Meta -->|"webhook"| N8N[n8n]
-    N8N -->|"insert inbound"| SB
-    SB -->|"select realtime"| CRM
 ```
+
+> Fluxo **send-only**: o pipeline entrega o ASO e persiste o estado de envio. Não há coleta de respostas dos clientes (sem CRM, sem Chatwoot).
 
 ---
 
@@ -76,7 +72,7 @@ flowchart TD
     Resolve --> Guard{ENVIO_REAL<br/>EMPRESAS?}
     Guard -->|false + número real| Abort[❌ BLOQUEIO<br/>DE SEGURANÇA]
     Guard -->|ok| Send[enviar_pdfs_empresa_meta<br/>1º PDF: template<br/>demais: documento]
-    Send --> Mark[marcar_aso_enviado<br/>+ registrar_mensagem_outbound]
+    Send --> Mark[marcar_aso_enviado]
     Mark --> Loop
     Loop -->|fim do laço| E7[7. salvar resumo<br/>output/saida_asos/resumo_execucao.json]
     Abort --> Erro[registrar_erro]
@@ -236,26 +232,6 @@ Controle de quem foi enviado, quando, para quem. Único índice em `chave_aso` g
 | `status` | text | `pendente` \| `enviado` |
 | `created_at` | timestamptz | |
 
-### Tabela `mensagens`
-
-Histórico bidirecional para o CRM `chat.html`. Append-only.
-
-| Coluna | Tipo | Notas |
-|---|---|---|
-| `id` | int8 PK | |
-| `codigo_empresa` | text | Pode ser null para inbound de número não cadastrado |
-| `nome_empresa` | text | Em inbound sem cadastro, vira o nome do perfil WhatsApp |
-| `numero_whatsapp` | text | Chave de agrupamento das conversas no CRM |
-| `direcao` | text | `inbound` \| `outbound` |
-| `tipo` | text | `text` \| `document` \| `image` \| etc |
-| `conteudo` | text | Mensagem ou descrição |
-| `nome_arquivo` | text | Quando `tipo=document` |
-| `wamid` | text | ID da Meta para correlação |
-| `timestamp_meta` | int8 | Epoch ms do servidor Meta (inbound) |
-| `created_at` | timestamptz | |
-
-> ⚠️ **RLS recomendado**: ative Row Level Security e crie policies. A publishable key do CRM, sem RLS, deixa todas as conversas legíveis por qualquer um que tenha o URL do projeto.
-
 ---
 
 ## 6. Integração com a API do SOC
@@ -326,7 +302,7 @@ debug_downloads/
 
 ## 7. Estratégia de envio WhatsApp
 
-A Meta cobra por **conversa iniciada** dentro de uma janela de 24h. Para empresas com vários ASOs no mesmo dia, mandar cada PDF separadamente custaria N conversas. A estratégia minimiza isso para **1 conversa por empresa por dia**:
+A Meta cobra por **conversa iniciada** dentro de uma janela de 24h. Para evitar que uma empresa com vários ASOs no mesmo dia gere várias conversas cobradas, todos os PDFs da empresa são **unidos num único arquivo** (um bookmark por funcionário, via `_unir_pdfs_em_arquivo`) e enviados como **uma única mensagem de template** — sempre 1 conversa por empresa por dia, independente de quantos ASOs existam:
 
 ```mermaid
 sequenceDiagram
@@ -335,90 +311,19 @@ sequenceDiagram
     participant E as Empresa
 
     Note over P: Empresa tem 3 ASOs no dia
-    P->>M: POST /media (PDF 1)
-    M-->>P: media_id_1
-    P->>M: POST /messages (template + media_id_1)
-    Note right of M: 💰 1 conversa iniciada<br/>(janela 24h aberta)
-    M-->>E: 📄 Template + PDF 1
-    Note over P: sleep 3s — espera Meta processar
-    P->>M: POST /media (PDF 2)
-    M-->>P: media_id_2
-    P->>M: POST /messages (document + media_id_2)
-    Note right of M: ✅ Dentro da janela = grátis
-    M-->>E: 📄 PDF 2
-    P->>M: POST /media (PDF 3)
-    M-->>P: media_id_3
-    P->>M: POST /messages (document + media_id_3)
-    M-->>E: 📄 PDF 3
+    P->>P: _unir_pdfs_em_arquivo()<br/>1 PDF único, 3 bookmarks
+    P->>M: POST /media (PDF unido)
+    M-->>P: media_id
+    P->>M: POST /messages (template + media_id)
+    Note right of M: 💰 1 conversa iniciada<br/>(custo fixo, não depende de N ASOs)
+    M-->>E: 📄 Template + PDF único (3 ASOs)
 ```
 
-Implementado em `src/meta/whatsapp.py:enviar_pdfs_empresa_meta`. Se o primeiro envio (template) falhar, o restante **não** é tentado — falha cedo evita gastar a janela de 24h em conversa que não vai render.
+Implementado em `src/meta/whatsapp.py:enviar_pdfs_empresa_meta`. Se a união de PDFs falhar para um arquivo individual, esse arquivo é pulado (erro registrado) mas os demais continuam entrando no PDF único — só falha tudo se **nenhum** PDF puder ser incluído. Antes de enviar, roda `_fazer_upload_pdf` (media_id) e, se o envio do template falhar, o arquivo temporário unido é removido do disco de qualquer forma (`finally: os.remove`).
 
 ---
 
-## 8. Fluxo de mensagens WhatsApp ↔ Chatwoot
-
-> O Chatwoot em si (Docker, banco, worker) é um projeto separado deste repositório — `github.com/safehelp-agentes/ChatWoot`, em `/opt/safework/chatwoot` na VPS. Aqui documentamos só a integração (`src/integrations/chatwoot.py`, webhook em `bot/service.py`).
-
-O sistema tem **dois sentidos** de tráfego de mensagens e um registro automático de envios. Toda essa integração assume que a inbox usada é do tipo **"API Channel"** — um canal nativo (ex: "WhatsApp Cloud API") reenvia de fato pela Meta ao criar uma mensagem `outgoing` via API, causando entrega duplicada real ao cliente. Isso já causou duplicidade em produção quando a inbox "API Channel" original foi apagada e substituída por um canal nativo; a inbox foi recriada com o tipo correto — nunca aponte `CHATWOOT_INBOX_ID` para um canal nativo.
-
-### 8.1. WhatsApp → Chatwoot (inbound)
-
-```mermaid
-graph LR
-    Contato[📱 Contato] -->|envia WhatsApp| Meta[(Meta API)]
-    Meta -->|webhook POST /webhook-aso| WH[webhook_meta.py<br/>Docker/n8n]
-    WH -->|POST /bot/mensagem<br/>rede Docker interna| Bot[bot/service.py<br/>Docker]
-    Bot -->|espelhar_inbound| CW[(Chatwoot)]
-    Bot -->|se BOT_ATIVO=true| Handler[bot/handler.py]
-    Handler -->|resposta| Meta
-    CW -->|conversa aparece| Agente[👤 Agente]
-```
-
-O `webhook_meta.py` recebe o callback da Meta, extrai número e mensagem, e faz POST para `bot-service:8001/bot/mensagem` pela rede Docker interna (sem passar pelo Traefik). O bot então espelha a mensagem no Chatwoot via API e, se `BOT_ATIVO=true`, aciona o handler de atendimento automático.
-
-### 8.2. Chatwoot → WhatsApp (outbound humano)
-
-```mermaid
-graph LR
-    Agente[👤 Agente] -->|responde no Chatwoot| CW[(Chatwoot)]
-    CW -->|webhook POST<br/>https://n8n.../chatwoot/webhook| Traefik[Traefik<br/>HTTPS público]
-    Traefik -->|roteia /chatwoot| Bot[bot/service.py]
-    Bot -->|enviar_texto_meta| Meta[(Meta API)]
-    Meta --> Contato[📱 Contato]
-```
-
-O Chatwoot chama o webhook via **URL pública HTTPS** (para passar pelo SSRF check que bloqueia IPs privados). O Traefik roteia `n8n.srv1564091.hstgr.cloud/chatwoot/webhook` para `bot-service:8001` na rede Docker interna.
-
-O handler verifica:
-- `event == "message_created"` e `message_type == "outgoing"` → processa
-- `private == true` → ignora (notas internas)
-- `additional_attributes.source == "safework_pipeline"` → ignora (evita loop com envios automáticos)
-
-### 8.3. Pipeline → Chatwoot (registro de envio automático)
-
-Quando o pipeline envia um ASO via Meta API, chama `espelhar_envio_sistema()` para registrar a entrega na conversa do contato no Chatwoot. A mensagem é marcada com `additional_attributes: {source: "safework_pipeline"}` para que o bot service não a reencaminhe ao WhatsApp.
-
-```
-Pipeline → enviar_pdfs_empresa_meta() → Meta API → WhatsApp ✓
-                                      └─→ espelhar_envio_sistema() → Chatwoot
-                                              (message_type=outgoing,
-                                               additional_attributes.source=safework_pipeline)
-```
-
-### 8.4. Webhook inbound no Supabase (legado CRM)
-
-O n8n também grava mensagens inbound no Supabase para o CRM `index.html`. Esse fluxo é independente do Chatwoot:
-
-```mermaid
-graph LR
-    WH[webhook_meta.py] -->|INSERT mensagens| SB[(Supabase)]
-    SB -->|poll 30s| CRM[index.html]
-```
-
----
-
-## 9. Tratamento de erros e retries
+## 8. Tratamento de erros e retries
 
 ### Camada de transporte (`_requisicao_com_retry`)
 
@@ -463,7 +368,7 @@ Resultado: **mesmo em crash catastrófico**, o relatório de erros sai.
 
 ---
 
-## 10. Decisões de design
+## 9. Decisões de design
 
 ### Por que Português no código?
 

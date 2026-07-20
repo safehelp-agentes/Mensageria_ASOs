@@ -45,8 +45,10 @@ CODIGO_USUARIO           = (os.getenv("SOC_CODIGO_USUARIO") or "").strip()
 CODIGO_EXPORTA_EMPRESAS = "192392"
 CODIGO_EXPORTA_GED      = "191710"
 CODIGO_EXPORTA_CONTATOS = "193815"
+CODIGO_EXPORTA_PRECO    = "200410"  # dados financeiros/contrato — usado para checar inadimplência
 CODIGO_TIPO_GED_ASO     = "38"
 
+SOC_CHAVE_PRECO                    = (os.getenv("SOC_CHAVE_PRECO") or "").strip()
 SOC_CHAVE_CONTATOS                 = (os.getenv("SOC_CHAVE_CONTATOS") or "").strip()
 SOC_EXPORTA_CONTATOS_USUARIO       = (os.getenv("SOC_EXPORTA_CONTATOS_USUARIO") or CODIGO_USUARIO).strip()
 SOC_EXPORTA_CONTATOS_IDENTIFICACAO = (os.getenv("SOC_EXPORTA_CONTATOS_IDENTIFICACAO") or "").strip()

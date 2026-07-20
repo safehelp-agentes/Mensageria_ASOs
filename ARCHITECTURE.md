@@ -59,8 +59,14 @@ Toda execução é determinística e segue **sete etapas numeradas explicitament
 flowchart TD
     Start([🚀 python main.py]) --> Prep[Prepara diretórios<br/>limpa temp_asos]
     Prep --> E1[1. buscar_chaves_enviadas<br/>Supabase: asos_enviados WHERE enviado=true]
-    E1 --> E2[2. coletar_asos_por_data<br/>SOC: para cada empresa ativa,<br/>busca ASOs da data]
-    E2 --> Save[salvar_listagem_asos<br/>output/saida_asos/*.json]
+    E1 --> E2{2. coletar_asos_por_data<br/>para cada empresa ativa}
+    E2 --> Inad{empresa_inadimplente?<br/>exportador 200410}
+    Inad -->|Sim OU erro na consulta| Skip[❌ Pulada<br/>sem buscar exames]
+    Skip --> Aviso[registrar em<br/>bloqueios_inadimplencia]
+    Aviso --> E2
+    Inad -->|Não| Busca[busca ASOs da data<br/>no SOC]
+    Busca --> E2
+    E2 -->|fim do laço| Save[salvar_listagem_asos<br/>output/saida_asos/*.json]
     Save --> E3[3. filtrar_nao_enviados<br/>remove duplicatas + chaves já enviadas]
     E3 --> E4{4. separar_por<br/>assinatura}
     E4 -->|sem assinatura| E5[5. registrar_aso_pendente<br/>Supabase: enviado=false]
@@ -82,6 +88,7 @@ flowchart TD
     Email --> End([✅ fim])
 
     style Abort fill:#fee,stroke:#c33,stroke-width:2px
+    style Skip fill:#fee,stroke:#c33,stroke-width:2px
     style Send fill:#efe,stroke:#3a3
     style E1 fill:#eef
     style E2 fill:#eef
@@ -93,6 +100,8 @@ flowchart TD
 ```
 
 > 📌 Cada caixa azul é uma etapa numerada explicitamente no `main.py`. Use os números (`# ── N. Descrição ──`) para localizar.
+
+> ⚠️ **Gate de inadimplência (jul/2026):** antes de buscar os exames de cada empresa, `coletar_asos_por_data` consulta `empresa_inadimplente()` (exportador `200410`). Empresa com **qualquer linha** `flagClienteInadimplente == "Sim"` é pulada sem consultar exames. Se a consulta falhar, a empresa também é pulada — **fail-safe**: erro na verificação bloqueia o envio por precaução, em vez de arriscar mandar para quem pode estar inadimplente. Os bloqueios (inadimplência ou erro) são acumulados e, ao fim da execução, viram **uma única mensagem de resumo** enviada ao `META_NUMERO_TESTE`.
 
 ---
 
@@ -240,13 +249,16 @@ Endpoint: `https://ws1.soc.com.br/WebSoc/exportadados`
 GET /WebSoc/exportadados?parametro={"empresa":"289501","codigo":"192392","chave":"...","tipoSaida":"json"}
 ```
 
-Usado para listar **empresas**, **ASOs** e **contatos** — três códigos diferentes:
+Usado para listar **empresas**, **ASOs**, **contatos** e **dados financeiros/contrato** — quatro códigos diferentes:
 
 | Tipo | Código exportador | Variável de chave |
 |---|---|---|
 | Empresas | `192392` | `SOC_CHAVE_EMPRESAS` |
 | GED (ASOs) | `191710` | `SOC_CHAVE_GED` |
 | Contatos | `193815` | `SOC_CHAVE_CONTATOS` |
+| Financeiro/contrato (inadimplência) | `200410` | `SOC_CHAVE_PRECO` |
+
+O exportador `200410` retorna **uma linha por produto/contrato** da empresa — não uma linha única. `empresa_inadimplente()` (`src/soc/api.py`) considera a empresa inadimplente se **qualquer** linha tiver `flagClienteInadimplente == "Sim"`; o campo pode divergir entre produtos de uma mesma empresa.
 
 Resposta de erro do SOC nunca vem como HTTP 4xx/5xx — vem como JSON `{"erro": true, "mensagem Erro": "..."}`. O cliente (`chamar_exporta_dados`) detecta isso e lança `RuntimeError`.
 

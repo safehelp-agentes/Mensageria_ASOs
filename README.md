@@ -112,7 +112,7 @@ playwright   gspread
 ### Pré-requisitos
 
 - Python 3.10+
-- Conta SOC com chaves dos exportadores (`192392`, `191710`, `193815`) e credenciais WS SOAP
+- Conta SOC com chaves dos exportadores (`192392`, `191710`, `193815`, `200410`) e credenciais WS SOAP
 - App Meta Business com template aprovado para documento
 - Projeto Supabase com a tabela `asos_enviados` (estado de envio) — e `mensagens`, se for usar o Inbox. Não há tabela de cadastro de empresas: o telefone vem do exportador de contatos do SOC.
 
@@ -150,10 +150,11 @@ python main.py --data "09/05/2026"
 
 > **Por padrão `ENVIO_REAL_EMPRESAS=false`** — nenhum documento chega ao número real até você ativar essa flag. Há ainda um bloqueio explícito em `_validar_numero_destino()` que aborta o envio se a flag estiver desativada.
 
-### Contato e bloqueio de empresas
+### Contato, bloqueio e inadimplência de empresas
 
 - **Telefone de destino:** vem exclusivamente do **exportador de contatos do SOC** (`193815`), resolvido por empresa na hora do envio. Não há cadastro de telefone no banco.
-- **Empresas bloqueadas:** lista fixa em `EMPRESAS_BLOQUEADAS` no `config.py` — essas empresas são puladas antes de qualquer consulta ao SOC. Edite a lista para bloquear/desbloquear.
+- **Empresas bloqueadas (lista fixa):** `EMPRESAS_BLOQUEADAS` no `config.py` — essas empresas são puladas antes de qualquer consulta ao SOC. Edite a lista para bloquear/desbloquear.
+- **Empresas inadimplentes (verificação dinâmica, a cada execução):** antes de buscar os exames de cada empresa, o pipeline consulta o **exportador `200410`** (dados financeiros/contrato). Se **qualquer linha** da empresa vier com `flagClienteInadimplente = "Sim"`, ela não recebe ASO nessa execução. Se a consulta falhar, a empresa também é bloqueada por precaução (fail-safe). Todas as empresas bloqueadas por esse motivo (inadimplência ou erro na consulta) entram num **resumo enviado por WhatsApp ao `META_NUMERO_TESTE`** ao fim da execução.
 
 ### Agendamento via cron
 
@@ -271,6 +272,7 @@ Todas as variáveis vivem no `.env`. Use `.env.example` como base.
 | `SOC_CHAVE_EMPRESAS` | sim | Chave exportador `192392` (lista de empresas) |
 | `SOC_CHAVE_GED` | sim | Chave exportador `191710` (ASOs/GED) |
 | `SOC_CHAVE_CONTATOS` | sim | Chave exportador `193815` (contatos p/ pipeline) |
+| `SOC_CHAVE_PRECO` | sim | Chave exportador `200410` (financeiro/contrato — verificação de inadimplência) |
 | `SOC_WS_USUARIO` | sim | Usuário SOAP |
 | `SOC_WS_PASSWORD` | sim | Senha SOAP |
 | `SOC_CODIGO_RESPONSAVEL` | sim | Código do responsável (SOAP) |
@@ -399,6 +401,7 @@ O pipeline roda por cron (não é um serviço contínuo) — não há containers
 
 - **Dupla trava de envio real** — `ENVIO_REAL_EMPRESAS=false` por padrão + bloqueio explícito em `_validar_numero_destino()`, independente da config
 - **Deduplicação idempotente** — chave `CD_EMPRESA|CD_GED|CD_ARQUIVO_GED` impede reenvio
+- **Verificação de inadimplência fail-safe** — se a consulta ao exportador `200410` falhar, a empresa é bloqueada por precaução (não recebe), em vez de assumir que está em dia
 - **WS-Security com nonce único** — 16 bytes aleatórios por chamada SOAP; tokens expiram em 5 minutos
 - **Chave Supabase server-side** — `service_role` usada apenas no pipeline (servidor), nunca em frontend
 - **PDFs não persistem no disco** — arquivos temporários são deletados após upload Meta via `finally: os.unlink()`
@@ -423,6 +426,7 @@ Detalhes completos em [SECURITY.md](SECURITY.md).
 | `Erro envio template: HTTP 400` | Template não aprovado ou nome errado | Painel Meta → Message Templates |
 | `BLOQUEIO DE SEGURANÇA` | Trava funcionando corretamente | Ativar `ENVIO_REAL_EMPRESAS=true` |
 | `[SUPABASE] Erro marcar enviado: 403` | RLS bloqueando ou chave errada | Verificar `SUPABASE_SERVICE_KEY` em supabase.com → Settings → API |
+| Empresa sumiu do envio sem aviso claro | Bloqueada por inadimplência ou erro na consulta ao `200410` | Ver o resumo enviado ao `META_NUMERO_TESTE` ao fim da execução, ou os logs `[erro na consulta de inadimplência]` |
 | Cadastro: `iframe 'socframe' não encontrado` | SOC não está aberto no Chrome CDP | Abrir Chrome com `--remote-debugging-port=9222`, logar no SOC e deixar na tela 337 |
 | Cadastro: `PermissionError` no Google Sheets | Planilha não compartilhada com a service account | Compartilhar com o email do JSON como Leitor |
 | Cadastro: `GOOGLE_SHEETS_ID não definido` | Variável ausente no `.env` | Adicionar `GOOGLE_SHEETS_ID` ao `.env` |

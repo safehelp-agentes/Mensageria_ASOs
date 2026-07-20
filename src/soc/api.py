@@ -5,7 +5,7 @@ import requests
 from config import (
     SOC_URL, SOC_EMPRESA_PRINCIPAL, SOC_CHAVE_EMPRESAS, SOC_CHAVE_GED,
     CODIGO_EXPORTA_EMPRESAS, CODIGO_EXPORTA_GED, CODIGO_EXPORTA_CONTATOS,
-    CODIGO_TIPO_GED_ASO, SOC_CHAVE_CONTATOS,
+    CODIGO_EXPORTA_PRECO, CODIGO_TIPO_GED_ASO, SOC_CHAVE_CONTATOS, SOC_CHAVE_PRECO,
     SOC_EXPORTA_CONTATOS_USUARIO, SOC_EXPORTA_CONTATOS_IDENTIFICACAO,
     SOC_EXPORTA_CONTATOS_CODIGO_PERFIL,
     IGNORAR_EMPRESA_PRINCIPAL, EMPRESAS_PERMITIDAS, LIMITE_EMPRESAS,
@@ -127,6 +127,34 @@ def buscar_asos_empresa(codigo_empresa_cliente: str, data_inicio: str, data_fim:
         print(f"    -> {msg}")
         registrar_erro(msg)
         return []
+
+
+def empresa_inadimplente(codigo_empresa_cliente: str) -> bool:
+    """Consulta o exportador 200410 (dados financeiros/contrato) e retorna True
+    se QUALQUER linha da empresa tiver flagClienteInadimplente == 'Sim'.
+    Propaga exceções — quem chama decide o que fazer em caso de falha."""
+    if not SOC_CHAVE_PRECO:
+        raise RuntimeError("SOC_CHAVE_PRECO não definido no .env")
+
+    parametro = {
+        "empresa":            SOC_EMPRESA_PRINCIPAL,
+        "codigo":             CODIGO_EXPORTA_PRECO,
+        "chave":              SOC_CHAVE_PRECO,
+        "tipoSaida":          "json",
+        "codigoEmpresa":      str(codigo_empresa_cliente),
+        "codigoUnidade":      "",
+        "codigoProduto":      "",
+        "codigoGrupoProduto": "",
+    }
+
+    data = chamar_exporta_dados(parametro, timeout=30)
+    if not isinstance(data, list):
+        return False
+
+    return any(
+        str(reg.get("flagClienteInadimplente", "")).strip().lower() == "sim"
+        for reg in data
+    )
 
 
 def buscar_contatos_empresa(codigo_empresa_cliente: str) -> list:

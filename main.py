@@ -26,6 +26,7 @@ from src.soc.api import (
 )
 from src.meta.whatsapp import (
     enviar_pdfs_empresa_meta, enviar_teste_sem_aso_meta, resolver_destino_envio,
+    enviar_texto_meta,
 )
 from src.integrations.supabase import (
     buscar_chaves_enviadas,
@@ -157,7 +158,6 @@ def main(usar_ontem: bool = False, data_especifica: str | None = None):
         print(f"\n[SUPABASE] Falha na verificação de conectividade: {supabase_msg}")
         print("Enviando alerta para o número de teste e encerrando...")
         try:
-            from src.meta.whatsapp import enviar_texto_meta
             enviar_texto_meta(META_NUMERO_TESTE, msg_erro)
             print("[META] Alerta enviado com sucesso.")
         except Exception as e:
@@ -185,10 +185,11 @@ def main(usar_ontem: bool = False, data_especifica: str | None = None):
     dt_fim      = datetime.strptime(data_fim, "%d/%m/%Y")
     data_inicio = (dt_fim - timedelta(days=JANELA_DIAS)).strftime("%d/%m/%Y")
 
-    registros_todos = coletar_asos_por_data(data_inicio, data_fim, bloqueadas)
+    registros_todos, bloqueios_inadimplencia = coletar_asos_por_data(data_inicio, data_fim, bloqueadas)
     caminho_json    = salvar_listagem_asos(registros_todos, data_fim)
     print(f"\nListagem salva em: {caminho_json}")
     print(f"Total de registros do SOC: {len(registros_todos)}")
+    print(f"Empresas bloqueadas por inadimplência/erro: {len(bloqueios_inadimplencia)}")
 
     # ── 3. Filtra os não enviados ──────────────────────────────────────────────
     registros_a_processar = filtrar_nao_enviados(registros_todos, chaves_enviadas)
@@ -205,6 +206,22 @@ def main(usar_ontem: bool = False, data_especifica: str | None = None):
             enviar_teste_sem_aso_meta(data_fim)
         except Exception as e:
             registrar_erro(f"Erro ao enviar teste sem ASO: {e}")
+
+    # ── Aviso de empresas bloqueadas por inadimplência/erro na verificação ──────
+    if bloqueios_inadimplencia:
+        linhas = "\n".join(
+            f"- {b['codigo']} {b['nome']}: {b['motivo']}" for b in bloqueios_inadimplencia
+        )
+        msg_inadimplencia = (
+            f"Automação ASOs — SafeWork\n"
+            f"{len(bloqueios_inadimplencia)} empresa(s) não receberam ASO nesta execução:\n"
+            f"{linhas}"
+        )
+        try:
+            enviar_texto_meta(META_NUMERO_TESTE, msg_inadimplencia)
+            print("\n[META] Aviso de inadimplência/erro enviado ao número de teste.")
+        except Exception as e:
+            registrar_erro(f"Erro ao enviar aviso de inadimplência/erro: {e}")
 
     # ── 5. Salva resumo e exibe totais ─────────────────────────────────────────
     resumo_path = os.path.join(PASTA_SAIDA_LISTAGEM, "resumo_execucao.json")

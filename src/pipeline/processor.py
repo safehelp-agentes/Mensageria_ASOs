@@ -10,7 +10,7 @@ from config import (
     DELAY_ENTRE_REQUISICOES, DELAY_ENTRE_DOWNLOADS,
 )
 from src.utils.helpers import sanitizar_nome, registrar_erro
-from src.soc.api import buscar_empresas, buscar_asos_empresa
+from src.soc.api import buscar_empresas, buscar_asos_empresa, empresa_inadimplente
 from src.soc.downloader import baixar_documento
 
 
@@ -19,9 +19,16 @@ def _montar_nome_arquivo_saida(nome_base: str, tipo: str) -> str:
     return f"{nome_base}.{tipo}" if tipo in ("pdf", "zip") else f"{nome_base}.bin"
 
 
-def coletar_asos_por_data(data_inicio: str, data_fim: str, empresas_bloqueadas: set = None) -> list:
+def coletar_asos_por_data(data_inicio: str, data_fim: str, empresas_bloqueadas: set = None) -> tuple[list, list]:
     """Busca ASOs de todas as empresas no intervalo [data_inicio, data_fim] (DD/MM/YYYY).
     Empresas em empresas_bloqueadas são ignoradas antes de qualquer consulta ao SOC.
+
+    Para cada empresa ativa, verifica inadimplência (exportador 200410) ANTES de
+    buscar os exames. Empresa inadimplente (ou com erro na consulta — bloqueada
+    por segurança) não tem os exames consultados.
+
+    Retorna (resultados, bloqueios_inadimplencia) — o segundo é uma lista de
+    {codigo, nome, motivo} para relatório no fim da execução.
     """
     empresas_bloqueadas = empresas_bloqueadas or set()
 
@@ -40,12 +47,32 @@ def coletar_asos_por_data(data_inicio: str, data_fim: str, empresas_bloqueadas: 
     print(f"Período consultado: {data_inicio} → {data_fim}")
 
     resultados = []
+    bloqueios_inadimplencia = []
 
     for i, emp in enumerate(empresas_ativas, start=1):
         codigo_empresa = str(emp.get("CODIGO", "")).strip()
         nome_empresa   = (emp.get("RAZAOSOCIAL") or emp.get("NOMEABREVIADO") or "").strip()
 
         print(f"[{i}/{len(empresas_ativas)}] Empresa {codigo_empresa} - {nome_empresa}")
+
+        try:
+            if empresa_inadimplente(codigo_empresa):
+                print("    -> BLOQUEADA: empresa inadimplente (exportador 200410)")
+                registrar_erro(f"Empresa {codigo_empresa} - {nome_empresa}: inadimplente, ASO não enviado")
+                bloqueios_inadimplencia.append({
+                    "codigo": codigo_empresa, "nome": nome_empresa, "motivo": "inadimplente",
+                })
+                time.sleep(DELAY_ENTRE_REQUISICOES)
+                continue
+        except Exception as e:
+            msg = f"Empresa {codigo_empresa} - {nome_empresa}: erro ao verificar inadimplência ({e}) — bloqueada por segurança"
+            print(f"    -> {msg}")
+            registrar_erro(msg)
+            bloqueios_inadimplencia.append({
+                "codigo": codigo_empresa, "nome": nome_empresa, "motivo": f"erro na consulta de inadimplência: {e}",
+            })
+            time.sleep(DELAY_ENTRE_REQUISICOES)
+            continue
 
         registros = buscar_asos_empresa(
             codigo_empresa_cliente=codigo_empresa,
@@ -66,7 +93,7 @@ def coletar_asos_por_data(data_inicio: str, data_fim: str, empresas_bloqueadas: 
 
         time.sleep(DELAY_ENTRE_REQUISICOES)
 
-    return resultados
+    return resultados, bloqueios_inadimplencia
 
 
 def salvar_listagem_asos(registros: list, data_consulta: str) -> str:

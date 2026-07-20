@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from config import (
     PASTA_TEMP, PASTA_DEBUG, PASTA_SAIDA_LISTAGEM,
     META_ENVIAR, META_TESTAR_SEM_ASO, META_NUMERO_TESTE,
-    ENVIO_REAL_EMPRESAS, JANELA_DIAS,
+    ENVIO_REAL_EMPRESAS, JANELA_DIAS, EMPRESAS_BLOQUEADAS,
 )
 from src.utils.helpers import (
     registrar_erro, obter_data_consulta, normalizar_numero_whatsapp,
@@ -28,12 +28,10 @@ from src.meta.whatsapp import (
     enviar_pdfs_empresa_meta, enviar_teste_sem_aso_meta, resolver_destino_envio,
 )
 from src.integrations.supabase import (
-    upsert_empresa,
     buscar_chaves_enviadas,
     marcar_aso_enviado,
     salvar_aso_pendente,
     buscar_asos_pendentes,
-    buscar_dados_empresas,
     verificar_conectividade,
 )
 
@@ -50,8 +48,7 @@ def _validar_numero_destino(numero_destino: str, codigo_empresa: str):
         )
 
 
-def _processar_grupo_empresas(grupos: dict, data_referencia: str, config_empresas: dict = None) -> list:
-    config_empresas = config_empresas or {}
+def _processar_grupo_empresas(grupos: dict, data_referencia: str) -> list:
     resumo = []
     print(f"\nEmpresas com ASOs a processar: {len(grupos)}")
 
@@ -62,22 +59,10 @@ def _processar_grupo_empresas(grupos: dict, data_referencia: str, config_empresa
         print(f"\n[{idx}/{len(grupos)}] Empresa {codigo_empresa} - {nome_empresa}")
         print(f"  ASOs: {len(regs_empresa)}")
 
-        # ── Resolve contato ANTES de baixar PDFs ──────────────────────────────
-        # Só processa empresas que tenham um contato com nome "ASO -" cadastrado.
+        # Telefone vem exclusivamente do exportador de contatos do SOC.
         contatos          = buscar_contatos_empresa(codigo_empresa)
         contato_escolhido = extrair_primeiro_numero_contato(contatos)
         numero_empresa    = contato_escolhido["numero"]
-
-        cfg_emp            = config_empresas.get(codigo_empresa, {})
-        telefone_escolhido = cfg_emp.get("telefone_escolhido", "") or ""
-        if telefone_escolhido:
-            if numero_parece_valido(telefone_escolhido):
-                numero_empresa = normalizar_numero_whatsapp(telefone_escolhido)
-                print(f"  Usando telefone escolhido (CRM): {numero_empresa}")
-            else:
-                registrar_erro(f"Empresa {codigo_empresa}: telefone_escolhido '{telefone_escolhido}' inválido")
-                print(f"  AVISO: telefone escolhido inválido ({telefone_escolhido})")
-                numero_empresa = ""
 
         if not numero_empresa:
             print(f"  AVISO: nenhum contato com número válido cadastrado. Empresa ignorada.")
@@ -100,13 +85,6 @@ def _processar_grupo_empresas(grupos: dict, data_referencia: str, config_empresa
             "origem_numero":            contato_escolhido["origem"],
             "erro_contato":             None,
         })
-
-        upsert_empresa(
-            codigo   = codigo_empresa,
-            nome     = nome_empresa,
-            cnpj     = regs_empresa[0].get("EMPRESA_CNPJ", ""),
-            telefone = numero_empresa,
-        )
 
         print(f"  Downloads OK: {resultado['downloads_ok']} | Erros: {resultado['erros']}")
         print(f"  Número destino: {numero_destino}")
@@ -197,18 +175,17 @@ def main(usar_ontem: bool = False, data_especifica: str | None = None):
     # ── 1. Busca ASOs já enviados, pendentes e dados de empresas no Supabase ───
     chaves_enviadas  = buscar_chaves_enviadas()
     pendentes        = buscar_asos_pendentes()
-    config_empresas  = buscar_dados_empresas()
-    bloqueadas       = {cod for cod, c in config_empresas.items() if c.get("bloqueada")}
+    bloqueadas       = EMPRESAS_BLOQUEADAS
     print(f"\nASOs já enviados (Supabase):  {len(chaves_enviadas)}")
     print(f"ASOs pendentes (não enviados): {len(pendentes)}")
-    print(f"Empresas bloqueadas:           {len(bloqueadas)}")
+    print(f"Empresas bloqueadas (config):  {len(bloqueadas)}")
 
     # ── 2. Consulta ASOs do SOC (janela de JANELA_DIAS antes da data de referência)
     data_fim    = obter_data_consulta(usar_ontem, data_especifica)
     dt_fim      = datetime.strptime(data_fim, "%d/%m/%Y")
     data_inicio = (dt_fim - timedelta(days=JANELA_DIAS)).strftime("%d/%m/%Y")
 
-    registros_todos = coletar_asos_por_data(data_inicio, data_fim, bloqueadas, config_empresas)
+    registros_todos = coletar_asos_por_data(data_inicio, data_fim, bloqueadas)
     caminho_json    = salvar_listagem_asos(registros_todos, data_fim)
     print(f"\nListagem salva em: {caminho_json}")
     print(f"Total de registros do SOC: {len(registros_todos)}")
@@ -219,7 +196,7 @@ def main(usar_ontem: bool = False, data_especifica: str | None = None):
 
     # ── 4. Processa empresas ───────────────────────────────────────────────────
     grupos = agrupar_por_empresa(registros_a_processar)
-    resumo = _processar_grupo_empresas(grupos, data_fim, config_empresas)
+    resumo = _processar_grupo_empresas(grupos, data_fim)
 
     # ── Fallback: sem ASOs ─────────────────────────────────────────────────────
     if not grupos and META_ENVIAR and META_TESTAR_SEM_ASO:

@@ -83,6 +83,24 @@ def api_conversa(numero: str):
         return JSONResponse({"erro": str(e)}, status_code=500)
 
 
+@app.get("/api/dashboard")
+def api_dashboard(inicio: str = "", fim: str = "", empresa: str = ""):
+    try:
+        return JSONResponse(repo.dashboard_dados(inicio, fim, empresa))
+    except Exception as e:
+        registrar_erro(f"[inbox api dashboard] {e}")
+        return JSONResponse({"erro": str(e)}, status_code=500)
+
+
+@app.get("/api/asos")
+def api_asos(status: str = "enviados", q: str = ""):
+    try:
+        return JSONResponse(repo.listar_asos(status, q))
+    except Exception as e:
+        registrar_erro(f"[inbox api asos] {e}")
+        return JSONResponse({"erro": str(e)}, status_code=500)
+
+
 @app.get("/health", response_class=PlainTextResponse)
 def health():
     return "ok"

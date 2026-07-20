@@ -63,6 +63,20 @@ ENVIO_REAL_EMPRESAS       = (os.getenv("ENVIO_REAL_EMPRESAS") or "false").strip(
 EMPRESAS_PERMITIDAS: set = set()   # Vazio = todas. Ex: {"295569", "334567"}
 LIMITE_EMPRESAS           = None   # None = sem limite. Ex: 5
 
+# Empresas que NÃO devem receber ASOs (puladas antes de qualquer consulta ao SOC).
+# Editar aqui para bloquear/desbloquear — substitui a flag `bloqueada` do Supabase.
+EMPRESAS_BLOQUEADAS: set = {
+    "1482690",   # AUTO POSTO JACARANDA LTDA
+    "1483189",   # PELIKANO DISTRIBUIDORA DE PETROLEO LTDA
+    "1483284",   # AUTO POSTO CARNAUBA EIRELI
+    "1470507",   # POSTO SAN JOSE LTDA
+    "1283644",   # AUTO POSTO JATOBA LTDA - DEMAIS
+    "1283805",   # AUTO POSTO ATUBA LTDA - ME
+    "1470496",   # AUTO POSTO TERESA LTDA
+    "1507001",   # AMAC ADMINISTRACAO E PARTICIPACOES LTDA
+    "1567353",   # PINHEIRAO AUTO POSTO LTDA
+}
+
 # ── Meta / WhatsApp ────────────────────────────────────────────────────────────
 META_WA_TOKEN        = (os.getenv("META_WA_TOKEN") or "").strip()
 META_PHONE_NUMBER_ID = (os.getenv("META_PHONE_NUMBER_ID") or "").strip()

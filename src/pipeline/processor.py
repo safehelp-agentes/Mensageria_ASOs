@@ -10,9 +10,8 @@ from config import (
     DELAY_ENTRE_REQUISICOES, DELAY_ENTRE_DOWNLOADS,
 )
 from src.utils.helpers import sanitizar_nome, registrar_erro
-from src.soc.api import buscar_empresas, buscar_asos_empresa, buscar_contatos_empresa, extrair_primeiro_numero_contato
+from src.soc.api import buscar_empresas, buscar_asos_empresa
 from src.soc.downloader import baixar_documento
-from src.integrations.supabase import buscar_dados_empresas, upsert_empresa
 
 
 def _montar_nome_arquivo_saida(nome_base: str, tipo: str) -> str:
@@ -20,64 +19,13 @@ def _montar_nome_arquivo_saida(nome_base: str, tipo: str) -> str:
     return f"{nome_base}.{tipo}" if tipo in ("pdf", "zip") else f"{nome_base}.bin"
 
 
-def _sincronizar_empresas_completo(empresas_soc: list, dados_supabase: dict) -> None:
-    """
-    Sincroniza todas as empresas do SOC com o Supabase.
-    - nome/cnpj: atualiza se diferente do registrado
-    - telefone: busca no SOC apenas quando o Supabase não tem valor (evita chamadas desnecessárias)
-    Não toca em telefone_escolhido nem bloqueada — esses campos são exclusivos do CRM.
-    """
-    atualizadas = sem_tel_resolvidas = 0
-    total = len(empresas_soc)
-    print(f"[SUPABASE] Sincronizando {total} empresa(s) com o SOC...")
-
-    for idx, emp in enumerate(empresas_soc, start=1):
-        if idx % 25 == 0 or idx == total:
-            print(f"  [sync {idx}/{total}] atualizadas: {atualizadas} | telefones preenchidos: {sem_tel_resolvidas}")
-
-        codigo = str(emp.get("CODIGO", "")).strip()
-        if not codigo:
-            continue
-
-        nome_soc = (emp.get("RAZAOSOCIAL") or emp.get("NOMEABREVIADO") or "").strip()
-        cnpj_soc = str(emp.get("CNPJ", "")).strip()
-
-        dados    = dados_supabase.get(codigo, {})
-        nome_db  = dados.get("nome", "")
-        cnpj_db  = dados.get("cnpj", "")
-        tel_db   = dados.get("telefone", "")
-
-        telefone_novo = tel_db
-        if not tel_db:
-            try:
-                contatos  = buscar_contatos_empresa(codigo)
-                tel_soc   = extrair_primeiro_numero_contato(contatos).get("numero", "")
-                if tel_soc:
-                    telefone_novo = tel_soc
-                    sem_tel_resolvidas += 1
-            except Exception as e:
-                registrar_erro(f"Erro ao buscar contato empresa {codigo}: {e}")
-
-        if nome_soc != nome_db or cnpj_soc != cnpj_db or telefone_novo != tel_db:
-            upsert_empresa(codigo=codigo, nome=nome_soc, cnpj=cnpj_soc, telefone=telefone_novo)
-            atualizadas += 1
-
-    print(f"[SUPABASE] Empresas verificadas: {len(empresas_soc)} | Atualizadas: {atualizadas} | Telefones preenchidos: {sem_tel_resolvidas}")
-
-
-def coletar_asos_por_data(data_inicio: str, data_fim: str, empresas_bloqueadas: set = None, dados_supabase: dict = None) -> list:
+def coletar_asos_por_data(data_inicio: str, data_fim: str, empresas_bloqueadas: set = None) -> list:
     """Busca ASOs de todas as empresas no intervalo [data_inicio, data_fim] (DD/MM/YYYY).
     Empresas em empresas_bloqueadas são ignoradas antes de qualquer consulta ao SOC.
-    dados_supabase: dict retornado por buscar_dados_empresas(); se None, é buscado internamente.
     """
     empresas_bloqueadas = empresas_bloqueadas or set()
 
     empresas = buscar_empresas()
-
-    if dados_supabase is None:
-        dados_supabase = buscar_dados_empresas()
-
-    _sincronizar_empresas_completo(empresas, dados_supabase)
 
     empresas_ativas = [
         emp for emp in empresas

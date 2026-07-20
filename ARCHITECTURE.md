@@ -198,18 +198,11 @@ graph TB
 
 ## 5. Modelo de dados (Supabase)
 
-### Tabela `empresas`
-
-Cadastro mestre. Upsert em `upsert_empresa()` (PostgREST com `Prefer: resolution=merge-duplicates`, conflito em `codigo`).
-
-| Coluna | Tipo | Notas |
-|---|---|---|
-| `id` | int8 PK | |
-| `codigo` | text **UNIQUE** | Código da empresa no SOC |
-| `nome` | text | Razão social ou nome abreviado |
-| `cnpj` | text | |
-| `telefone` | text | Telefone normalizado WhatsApp (com `55`) |
-| `created_at`, `updated_at` | timestamptz | |
+> **Não há tabela de cadastro de empresas.** O telefone de cada empresa vem
+> exclusivamente do **exportador de contatos do SOC** (`buscar_contatos_empresa`,
+> exportador `193815`) na hora do envio. O bloqueio de empresas é uma lista fixa
+> no código (`EMPRESAS_BLOQUEADAS` em `config.py`). O Supabase guarda só o estado
+> de envio (`asos_enviados`) e as mensagens do Inbox (`mensagens`).
 
 ### Tabela `asos_enviados`
 
@@ -221,7 +214,7 @@ Controle de quem foi enviado, quando, para quem. Único índice em `chave_aso` g
 | `chave_aso` | text **UNIQUE** | `CD_EMPRESA\|CD_GED\|CD_ARQUIVO_GED` |
 | `cd_empresa_soc` | text | Redundante para query, espelha parte da chave |
 | `cd_ged`, `cd_arquivo_ged` | text | Idem |
-| `codigo_empresa` | text FK → empresas.codigo | |
+| `codigo_empresa` | text | Código da empresa no SOC (sem FK) |
 | `nome_empresa` | text | |
 | `nome_arquivo` | text | Nome do PDF enviado |
 | `data_envio` | date | YYYY-MM-DD |
@@ -377,7 +370,7 @@ Domínio fortemente brasileiro: SOC, ASO, CNPJ, ESocial. Traduzir vira "Health C
 
 ### Por que PostgREST direto em vez do client `supabase-py`?
 
-`supabase-py` traz mais dependências, faz pool de conexões que não precisamos para 1 execução/dia, e a API REST do PostgREST é suficiente. Cinco endpoints, todos com `requests.post/get` simples.
+`supabase-py` traz mais dependências, faz pool de conexões que não precisamos para 1 execução/dia, e a API REST do PostgREST é suficiente. Poucos endpoints, todos com `requests.post/get` simples.
 
 ### Por que limpar `temp_asos/` a cada execução?
 
@@ -389,13 +382,13 @@ A chave composta `CD_EMPRESA|CD_GED|CD_ARQUIVO_GED` é ótima para uniqueness, m
 
 ---
 
-## 10. Inbox — recepção e visualização de mensagens
+## 10. CRM — recepção e visualização (Inbox de ASOs)
 
-Serviço **independente** do pipeline (pasta `inbox/`), **read-only** do ponto de vista do negócio: recebe as respostas dos clientes e as exibe junto dos envios. Não altera o pipeline nem responde mensagens.
+Serviço **independente** do pipeline (pasta `inbox/`), **read-only** do ponto de vista do negócio: recebe as respostas dos clientes e mostra tudo num CRM de **3 abas** (Dashboard, Conversas, ASOs). Não altera o pipeline nem responde mensagens.
 
-### 10.1. Por que um app próprio (e não Chatwoot)
+### 10.1. Por que um app próprio (e não Chatwoot / o CRM antigo)
 
-Read-only, solo, baixo volume. Chatwoot exigiria infra pesada 24/7 e refatorar o pipeline de produção para os envios aparecerem nele. Um FastAPI enxuto que **lê o Supabase** já resolve.
+Read-only, solo, baixo volume. Chatwoot exigiria infra pesada 24/7. E o **CRM antigo** (que rodava em `/CrmEnvioAso`, nginx) falava com o Supabase **direto do navegador** (chave exposta) e dependia da tabela `empresas`. Este serviço o **substitui**: mesmo visual, mas **server-side** (a SPA só consome a API JSON do próprio backend; a `service_role` nunca sai do servidor) e **sem `empresas`**. O CRM antigo foi aposentado.
 
 ### 10.2. Fluxo do webhook (inbound)
 
@@ -428,13 +421,17 @@ Não foi criada tabela nova. A `mensagens` (legado do bot removido) já tem o fo
 
 ### 10.4. Conversa por número (não por empresa)
 
-A chave de agrupamento é o **número de telefone**, como no WhatsApp. A empresa é só um rótulo resolvido na leitura, casando o número contra `asos_enviados.numero_destino` e `empresas.telefone`. Um número pode carregar N empresas (todas viram etiquetas) e continua sendo **uma thread só**. Sem match → thread aparece como "não associada".
+A chave de agrupamento é o **número de telefone**, como no WhatsApp. A empresa é só um rótulo resolvido na leitura a partir de `asos_enviados` (campo `nome_empresa`). Um número pode carregar N empresas (todas viram etiquetas) e continua sendo **uma thread só**. Sem match → thread aparece como "não associada".
 
 **Tolerância ao 9º dígito:** a Meta às vezes entrega o número sem o nono dígito. `variantes_numero()` gera as duas formas (com e sem o 9) e o casamento usa `in.(...)`; `chave_conversa()` normaliza para a forma mais longa, garantindo que envio e resposta caiam na mesma conversa.
 
 ### 10.5. Dashboard e deploy
 
-- **Dashboard** (server-rendered, Jinja2): `/` lista conversas por número (última atividade, contagens, rótulos de empresa); `/conversa/{numero}` mostra a timeline mesclando envios (`asos_enviados`) e recebidas (`mensagens`). A `service_role` fica no backend — nada no browser.
+- **CRM (SPA de 3 abas)**: a raiz (`/`) serve uma single-page app que consome uma **API JSON própria** do backend:
+  - `GET /api/dashboard?inicio&fim&empresa` — KPIs (total, hoje, média/empresa, média diária, empresas atendidas), série de 30 dias e top empresas (gráficos **SVG inline**, sem CDN), recentes. Calculado de `asos_enviados`.
+  - `GET /api/conversas` + `GET /api/conversa/{numero}` — conversas por número (timeline mesclando `asos_enviados` e `mensagens`). Envios renderizados como o cliente recebeu: card do PDF + corpo do template (`{{1}}`=empresa, `{{2}}`=data), agrupando os N ASOs de um mesmo envio numa bolha.
+  - `GET /api/asos?status&q` — lista Enviados/Pendentes/Todos de `asos_enviados`.
+  O front nunca fala com o Supabase direto; a `service_role` fica no backend. `_get_all` pagina em blocos grandes (o projeto Supabase não limita a 1000/req), então cada aba carrega em ~1s.
 - **Deploy:** container na rede `n8n_default`, atrás do Traefik (`certresolver=mytlschallenge`), host `inbox.srv1564091.hstgr.cloud`. Dois routers no mesmo serviço: `/webhook` **sem** auth (a Meta não manda credenciais) e o resto com **Basic Auth** (middleware do Traefik). Código montado por volume `:ro` — `git pull` atualiza sem rebuild.
 
 ---

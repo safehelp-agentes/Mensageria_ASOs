@@ -57,14 +57,15 @@ Este sistema resolve isso com um **pipeline automático**: todo dia útil busca 
 │                                                    │                         │
 │                                  grava inbound em `mensagens` (Supabase)     │
 │                                                    │                         │
-│  Dashboard ◄── junta asos_enviados (enviadas) + mensagens (recebidas)       │
-│              por número de telefone, numa timeline por conversa             │
+│  CRM (SPA) ◄── API JSON do backend ◄── asos_enviados + mensagens            │
+│     3 abas: Dashboard · Conversas (por número) · ASOs                        │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
 
 O pipeline é send-only: entrega o ASO e persiste o estado de envio, sem nunca ler
-respostas. O Inbox é um serviço SEPARADO e read-only — recebe as respostas dos
-clientes via webhook da Meta e as exibe junto dos envios, sem realimentar o pipeline.
+respostas. O CRM (pasta `inbox/`) é um serviço SEPARADO e read-only — recebe as
+respostas dos clientes via webhook e as exibe junto dos envios, sem realimentar o
+pipeline. Substitui o CRM antigo browser-side de `/CrmEnvioAso` (aposentado).
 ```
 
 ---
@@ -113,7 +114,7 @@ playwright   gspread
 - Python 3.10+
 - Conta SOC com chaves dos exportadores (`192392`, `191710`, `193815`) e credenciais WS SOAP
 - App Meta Business com template aprovado para documento
-- Projeto Supabase com tabelas `empresas` e `asos_enviados`
+- Projeto Supabase com a tabela `asos_enviados` (estado de envio) — e `mensagens`, se for usar o Inbox. Não há tabela de cadastro de empresas: o telefone vem do exportador de contatos do SOC.
 
 ### Instalação
 
@@ -148,6 +149,11 @@ python main.py --data "09/05/2026"
 ```
 
 > **Por padrão `ENVIO_REAL_EMPRESAS=false`** — nenhum documento chega ao número real até você ativar essa flag. Há ainda um bloqueio explícito em `_validar_numero_destino()` que aborta o envio se a flag estiver desativada.
+
+### Contato e bloqueio de empresas
+
+- **Telefone de destino:** vem exclusivamente do **exportador de contatos do SOC** (`193815`), resolvido por empresa na hora do envio. Não há cadastro de telefone no banco.
+- **Empresas bloqueadas:** lista fixa em `EMPRESAS_BLOQUEADAS` no `config.py` — essas empresas são puladas antes de qualquer consulta ao SOC. Edite a lista para bloquear/desbloquear.
 
 ### Agendamento via cron
 
@@ -214,16 +220,20 @@ python src/soc/cadastra_contatos.py
 
 ---
 
-## Inbox — visualizador de mensagens
+## CRM — Inbox de ASOs
 
-Serviço **read-only** e **separado do pipeline**, para ver num só lugar o que o pipeline enviou e o que os clientes responderam no WhatsApp, organizado por **número de telefone** (uma conversa por número, estilo WhatsApp). Não responde mensagens, não atribui atendimento — só visualiza.
+Serviço **read-only** e **separado do pipeline** (pasta `inbox/`, mas o produto é o CRM). Substitui o CRM antigo que rodava em `/CrmEnvioAso` (nginx, browser-side, aposentado) — mesmo visual, porém **server-side** (nada de chave Supabase no navegador) e **sem tabela `empresas`**.
 
-Duas partes num único serviço FastAPI (`inbox/`):
+Um único serviço FastAPI com **webhook** + **SPA de 3 abas**:
 
-1. **Webhook da Meta** — recebe as respostas dos clientes e grava na tabela `mensagens` (`direcao='inbound'`). Idempotente por `wamid` (a Meta reenvia). O pipeline de envio **não é alterado**.
-2. **Dashboard** — junta `asos_enviados` (enviadas) e `mensagens` (recebidas) por número, numa timeline por conversa. Server-rendered: a `service_role` fica no backend, nunca no browser.
+- **Webhook da Meta** (`GET/POST /webhook`) — recebe as respostas dos clientes e grava na tabela `mensagens` (`direcao='inbound'`). Idempotente por `wamid`. O pipeline de envio **não é alterado**.
+- **Dashboard** (`/api/dashboard`) — KPIs (total enviados, hoje, média por empresa, média diária, empresas atendidas), gráfico dos últimos 30 dias e por empresa (SVG inline, sem CDN), tabela de recentes. Filtros de período e empresa.
+- **Conversas** (`/api/conversas`, `/api/conversa/{numero}`) — chat estilo WhatsApp por número; envios aparecem como o cliente recebeu (card do PDF + corpo do template com empresa/data).
+- **ASOs** (`/api/asos`) — tabela de ASOs Enviados/Pendentes/Todos com busca.
 
-> A empresa é apenas um **rótulo** resolvido na leitura (via `asos_enviados`/`empresas`). Números da Meta às vezes vêm sem o 9º dígito; o casamento tolera isso (compara as variantes com e sem o 9).
+A SPA consome **só a API JSON do backend** — o front nunca fala com o Supabase direto; a `service_role` fica no servidor. Login é o **Basic Auth do Traefik** (não há login Supabase).
+
+> A empresa é apenas um **rótulo** resolvido a partir de `asos_enviados` (não há tabela `empresas`; sem CNPJ). Números da Meta às vezes vêm sem o 9º dígito; o casamento tolera isso (variantes com e sem o 9).
 
 ### Rodar localmente
 
@@ -335,10 +345,10 @@ envio_ASO/
 │   └── teste_funcionario_guia.py         # Testa exportador 216658 (Funcionário e Guia)
 │
 ├── inbox/                         # Visualizador read-only (serviço à parte, não toca no pipeline)
-│   ├── app.py                     # FastAPI: webhook Meta + dashboard
+│   ├── app.py                     # FastAPI: webhook Meta + SPA + API JSON (/api/*)
 │   ├── webhook.py                 # Parser do payload da Meta (mensagens recebidas)
 │   ├── repo.py                    # Supabase: grava inbound + junta envios/recebidas por número
-│   ├── templates/                 # UI (lista de conversas + timeline por número)
+│   ├── templates/index.html       # SPA (sidebar de conversas + chat), estilo CRM
 │   ├── Dockerfile
 │   ├── docker-compose.yml         # Traefik: /webhook sem auth, resto com Basic Auth
 │   └── requirements.txt
@@ -360,7 +370,7 @@ envio_ASO/
     │   └── manager.py             # Chave de identidade ASO, deduplicação
     │
     ├── integrations/
-    │   ├── supabase.py            # PostgREST — upsert empresas e ASOs (dedup/estado)
+    │   ├── supabase.py            # PostgREST — estado de envio dos ASOs (dedup/idempotência)
     │   └── email.py               # Relatório de erros via SMTP Gmail
     │
     └── utils/
@@ -412,7 +422,7 @@ Detalhes completos em [SECURITY.md](SECURITY.md).
 | `Erro upload PDF Meta: HTTP 401` | Token Meta expirado | Renovar em developers.facebook.com |
 | `Erro envio template: HTTP 400` | Template não aprovado ou nome errado | Painel Meta → Message Templates |
 | `BLOQUEIO DE SEGURANÇA` | Trava funcionando corretamente | Ativar `ENVIO_REAL_EMPRESAS=true` |
-| `[SUPABASE] Erro upsert: 403` | RLS bloqueando ou chave errada | Verificar `SUPABASE_SERVICE_KEY` em supabase.com → Settings → API |
+| `[SUPABASE] Erro marcar enviado: 403` | RLS bloqueando ou chave errada | Verificar `SUPABASE_SERVICE_KEY` em supabase.com → Settings → API |
 | Cadastro: `iframe 'socframe' não encontrado` | SOC não está aberto no Chrome CDP | Abrir Chrome com `--remote-debugging-port=9222`, logar no SOC e deixar na tela 337 |
 | Cadastro: `PermissionError` no Google Sheets | Planilha não compartilhada com a service account | Compartilhar com o email do JSON como Leitor |
 | Cadastro: `GOOGLE_SHEETS_ID não definido` | Variável ausente no `.env` | Adicionar `GOOGLE_SHEETS_ID` ao `.env` |

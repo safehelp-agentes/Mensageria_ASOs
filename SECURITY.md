@@ -66,7 +66,7 @@ git push origin --force-with-lease
 
 ## Retenção de dados (LGPD)
 
-- O pipeline persiste no Supabase apenas o **estado de envio** dos ASOs (tabelas `empresas` e `asos_enviados`) — usado para deduplicação/idempotência.
+- O pipeline persiste no Supabase apenas o **estado de envio** dos ASOs (tabela `asos_enviados`) — usado para deduplicação/idempotência. Não há cadastro de empresas no banco: o telefone vem do exportador de contatos do SOC a cada execução.
 - O **Inbox** persiste as respostas dos clientes na tabela `mensagens` (`direcao='inbound'`) — há, portanto, histórico de mensagens recebidas. Retenção atual: **guardar tudo** (sem expurgo). O conteúdo é de acesso interno e restrito (Basic Auth + `service_role` server-side).
 - PDFs de ASOs **não são armazenados** — apenas transitam em memória/temp e são deletados após o envio. O Inbox **não baixa mídia** recebida (guarda só metadados: tipo, legenda, nome do arquivo).
 

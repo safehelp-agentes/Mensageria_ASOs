@@ -50,9 +50,9 @@ def verificar_conectividade() -> tuple[bool, str]:
     try:
         resp = _requisicao_com_retry(
             requests.get,
-            _url("empresas"),
+            _url("asos_enviados"),
             headers=_headers(),
-            params={"select": "codigo", "limit": "1"},
+            params={"select": "id", "limit": "1"},
             timeout=10,
         )
         if resp.status_code < 300:
@@ -60,26 +60,6 @@ def verificar_conectividade() -> tuple[bool, str]:
         return False, f"HTTP {resp.status_code}: {resp.text[:200]}"
     except Exception as e:
         return False, str(e)
-
-
-# ── Empresas ──────────────────────────────────────────────
-
-def upsert_empresa(codigo: str, nome: str, cnpj: str = "", telefone: str = ""):
-    if not SUPABASE_ATIVO:
-        return
-    try:
-        resp = _requisicao_com_retry(
-            requests.post,
-            _url("empresas"),
-            headers={**_headers(), "Prefer": "resolution=merge-duplicates,return=minimal"},
-            params={"on_conflict": "codigo"},
-            json={"codigo": codigo, "nome": nome, "cnpj": cnpj, "telefone": telefone},
-            timeout=10,
-        )
-        if resp.status_code >= 300:
-            print(f"[SUPABASE] Erro upsert empresa {codigo}: {resp.text[:200]}")
-    except Exception as e:
-        print(f"[SUPABASE] Erro upsert empresa: {e}")
 
 
 # ── ASOs enviados ─────────────────────────────────────────
@@ -200,34 +180,3 @@ def buscar_asos_pendentes() -> list:
     except Exception as e:
         print(f"[SUPABASE] Erro buscar pendentes: {e}")
         return []
-
-
-def buscar_dados_empresas() -> dict:
-    """Retorna {codigo: {nome, cnpj, telefone, bloqueada, telefone_escolhido}} para todas as empresas."""
-    if not SUPABASE_ATIVO:
-        return {}
-    try:
-        resp = _requisicao_com_retry(
-            requests.get,
-            _url("empresas"),
-            headers=_headers(),
-            params={"select": "codigo,nome,cnpj,telefone,bloqueada,telefone_escolhido"},
-            timeout=15,
-        )
-        if resp.status_code >= 300:
-            print(f"[SUPABASE] Erro buscar dados empresas: {resp.text[:200]}")
-            return {}
-        return {
-            row["codigo"]: {
-                "nome":               (row.get("nome") or "").strip(),
-                "cnpj":               (row.get("cnpj") or "").strip(),
-                "telefone":           (row.get("telefone") or "").strip(),
-                "bloqueada":          bool(row.get("bloqueada", False)),
-                "telefone_escolhido": (row.get("telefone_escolhido") or "").strip(),
-            }
-            for row in resp.json()
-            if row.get("codigo")
-        }
-    except Exception as e:
-        print(f"[SUPABASE] Erro buscar dados empresas: {e}")
-        return {}

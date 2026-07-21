@@ -127,17 +127,21 @@ def wamid_existe(wamid: str) -> bool:
     return resp.status_code < 300 and len(resp.json()) > 0
 
 
-def inserir_inbound(msg: dict) -> str:
-    """Grava uma mensagem recebida. Idempotente: pula se o wamid já existe.
+def inserir_mensagem(msg: dict) -> str:
+    """Grava uma mensagem inbound/outbound. Idempotente: pula se o wamid ja existe.
     Retorna 'inserido' | 'duplicado'."""
     if msg.get("wamid") and wamid_existe(msg["wamid"]):
         return "duplicado"
+
+    direcao = (msg.get("direcao") or "inbound").strip().lower()
+    if direcao not in {"inbound", "outbound"}:
+        raise ValueError("direcao deve ser inbound ou outbound")
 
     resp = _requisicao_com_retry(
         requests.post, _url("mensagens"),
         headers={**_headers(), "Prefer": "return=minimal"},
         json={
-            "direcao":         "inbound",
+            "direcao":         direcao,
             "numero_whatsapp": msg["numero"],
             "nome_empresa":    msg.get("nome_perfil"),   # push name (mesma convenção do legado)
             "codigo_empresa":  None,
@@ -154,15 +158,19 @@ def inserir_inbound(msg: dict) -> str:
     return "inserido"
 
 
+def inserir_inbound(msg: dict) -> str:
+    """Grava uma mensagem recebida pelo webhook da Meta."""
+    return inserir_mensagem({**msg, "direcao": "inbound"})
+
+
 # ── Leitura (dashboard) ──────────────────────────────────────────────────────
 
 def listar_conversas() -> list:
     """Uma entrada por número, juntando envios e recebidas, ordenada por atividade recente."""
     enviados  = _get_all("asos_enviados", {
         "select": "numero_destino,nome_empresa,codigo_empresa,created_at,data_envio"})
-    recebidos = _get_all("mensagens", {
-        "direcao": "eq.inbound",
-        "select":  "numero_whatsapp,nome_empresa,conteudo,tipo,timestamp_meta,created_at"})
+    mensagens = _get_all("mensagens", {
+        "select":  "direcao,numero_whatsapp,nome_empresa,conteudo,tipo,timestamp_meta,created_at"})
 
     conversas = {}
 
@@ -172,7 +180,7 @@ def listar_conversas() -> list:
             return None
         return conversas.setdefault(chave, {
             "numero": chave, "codigo": "", "empresas": set(), "perfil": None,
-            "enviadas": 0, "recebidas": 0,
+            "enviadas": 0, "recebidas": 0, "mensagens_enviadas": 0,
             "ultimo_ts": None, "ultimo_preview": "", "ultimo_direcao": None,
         })
 
@@ -195,15 +203,19 @@ def listar_conversas() -> list:
             slot["codigo"] = cod
         _marcar(slot, _iso_para_ms(r.get("created_at")), "ASO enviado", "outbound")
 
-    for r in recebidos:
+    for r in mensagens:
         slot = _slot(r.get("numero_whatsapp", ""))
         if slot is None:
             continue
-        slot["recebidas"] += 1
+        direcao = (r.get("direcao") or "inbound").strip().lower()
+        if direcao == "outbound":
+            slot["mensagens_enviadas"] += 1
+        else:
+            slot["recebidas"] += 1
         slot["perfil"] = slot["perfil"] or (r.get("nome_empresa") or "").strip() or None
         ts = r.get("timestamp_meta") or _iso_para_ms(r.get("created_at"))
         preview = (r.get("conteudo") or f"[{r.get('tipo', 'mensagem')}]")[:80]
-        _marcar(slot, ts, preview, "inbound")
+        _marcar(slot, ts, preview, "outbound" if direcao == "outbound" else "inbound")
 
     saida = []
     for chave, slot in conversas.items():
@@ -216,6 +228,7 @@ def listar_conversas() -> list:
             "tem_empresa": bool(empresas_lst),
             "enviadas":    slot["enviadas"],
             "recebidas":   slot["recebidas"],
+            "mensagens_enviadas": slot["mensagens_enviadas"],
             "ts":          slot["ultimo_ts"],
             "preview":     slot["ultimo_preview"],
             "preview_dir": slot["ultimo_direcao"],
@@ -252,9 +265,9 @@ def obter_conversa(numero: str) -> dict:
     enviados  = _get_all("asos_enviados", {
         "numero_destino": filtro,
         "select": "nome_empresa,codigo_empresa,created_at,data_envio,data_emissao,status,nome_arquivo"})
-    recebidos = _get_all("mensagens", {
-        "direcao": "eq.inbound", "numero_whatsapp": filtro,
-        "select": "nome_empresa,conteudo,tipo,timestamp_meta,created_at,nome_arquivo"})
+    mensagens = _get_all("mensagens", {
+        "numero_whatsapp": filtro,
+        "select": "direcao,nome_empresa,conteudo,tipo,timestamp_meta,created_at,nome_arquivo"})
 
     eventos, empresas, perfil, codigo, cnpj = [], set(), None, "", ""
 
@@ -285,11 +298,15 @@ def obter_conversa(numero: str) -> dict:
         if atual:
             eventos.append(_evento_lote_envio(atual))
 
-    for r in recebidos:
+    recebidas_count = 0
+    for r in mensagens:
         perfil  = perfil or (r.get("nome_empresa") or "").strip() or None
         ts      = r.get("timestamp_meta") or _iso_para_ms(r.get("created_at"))
+        direcao = (r.get("direcao") or "inbound").strip().lower()
+        if direcao != "outbound":
+            recebidas_count += 1
         eventos.append({
-            "dir":     "in",
+            "dir":     "out" if direcao == "outbound" else "in",
             "ts":      ts,
             "tipo":    r.get("tipo") or "text",
             "texto":   r.get("conteudo"),
@@ -309,7 +326,7 @@ def obter_conversa(numero: str) -> dict:
             "cnpj":      cnpj,
             "perfil":    perfil,
             "enviadas":  len(enviados),
-            "recebidas": len(recebidos),
+            "recebidas": recebidas_count,
         },
         "eventos": eventos,
     }

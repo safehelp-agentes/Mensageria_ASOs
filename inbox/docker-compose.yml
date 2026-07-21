@@ -43,6 +43,12 @@ services:
       - "traefik.http.routers.inbox-webhook.priority=100"
       - "traefik.http.routers.inbox-webhook.service=inbox-svc"
 
+      - "traefik.http.routers.inbox-internal.rule=Host(`inbox.srv1564091.hstgr.cloud`) && PathPrefix(`/api/internal`)"
+      - "traefik.http.routers.inbox-internal.entrypoints=websecure"
+      - "traefik.http.routers.inbox-internal.tls.certresolver=mytlschallenge"
+      - "traefik.http.routers.inbox-internal.priority=90"
+      - "traefik.http.routers.inbox-internal.service=inbox-svc"
+
       # ── Router do dashboard (COM Basic Auth) ────────────────────────────────
       - "traefik.http.routers.inbox-dash.rule=Host(`inbox.srv1564091.hstgr.cloud`)"
       - "traefik.http.routers.inbox-dash.entrypoints=websecure"

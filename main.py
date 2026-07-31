@@ -172,19 +172,23 @@ def main(usar_ontem: bool = False, data_especifica: str | None = None):
     for pasta in (PASTA_TEMP, PASTA_DEBUG, PASTA_SAIDA_LISTAGEM):
         os.makedirs(pasta, exist_ok=True)
 
+    # ── Janela de datas (usada tanto na consulta ao SOC quanto no Supabase) ─────
+    data_fim    = obter_data_consulta(usar_ontem, data_especifica)
+    dt_fim      = datetime.strptime(data_fim, "%d/%m/%Y")
+    data_inicio = (dt_fim - timedelta(days=JANELA_DIAS)).strftime("%d/%m/%Y")
+
     # ── 1. Busca ASOs já enviados, pendentes e dados de empresas no Supabase ───
-    chaves_enviadas  = buscar_chaves_enviadas()
-    pendentes        = buscar_asos_pendentes()
+    # Filtrado pela MESMA janela de data_emissao da consulta ao SOC (abaixo) —
+    # mantém a consulta pequena e evita truncamento pelo limite de linhas do
+    # Supabase conforme o histórico de asos_enviados cresce.
+    chaves_enviadas  = buscar_chaves_enviadas(data_inicio, data_fim)
+    pendentes        = buscar_asos_pendentes(data_inicio, data_fim)
     bloqueadas       = EMPRESAS_BLOQUEADAS
     print(f"\nASOs já enviados (Supabase):  {len(chaves_enviadas)}")
     print(f"ASOs pendentes (não enviados): {len(pendentes)}")
     print(f"Empresas bloqueadas (config):  {len(bloqueadas)}")
 
     # ── 2. Consulta ASOs do SOC (janela de JANELA_DIAS antes da data de referência)
-    data_fim    = obter_data_consulta(usar_ontem, data_especifica)
-    dt_fim      = datetime.strptime(data_fim, "%d/%m/%Y")
-    data_inicio = (dt_fim - timedelta(days=JANELA_DIAS)).strftime("%d/%m/%Y")
-
     registros_todos, bloqueios_inadimplencia = coletar_asos_por_data(data_inicio, data_fim, bloqueadas)
     caminho_json    = salvar_listagem_asos(registros_todos, data_fim)
     print(f"\nListagem salva em: {caminho_json}")

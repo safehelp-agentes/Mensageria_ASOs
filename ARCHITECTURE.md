@@ -396,7 +396,7 @@ A chave composta `CD_EMPRESA|CD_GED|CD_ARQUIVO_GED` é ótima para uniqueness, m
 
 ## 10. CRM — recepção e visualização (Inbox de ASOs)
 
-Serviço **independente** do pipeline (pasta `inbox/`), **read-only** do ponto de vista do negócio: recebe as respostas dos clientes e mostra tudo num CRM de **3 abas** (Dashboard, Conversas, ASOs). Não altera o pipeline nem responde mensagens.
+Serviço **independente** do pipeline (pasta `inbox/`), **read-only** do ponto de vista do negócio: recebe as respostas dos clientes e mostra tudo num CRM de **3 abas** (Dashboard, Conversas, ASOs). Não altera o pipeline nem responde mensagens. Além do webhook da Meta, expõe um endpoint interno tokenizado para outras automações registrarem mensagens no mesmo histórico.
 
 ### 10.1. Por que um app próprio (e não Chatwoot / o CRM antigo)
 
@@ -427,24 +427,46 @@ sequenceDiagram
 - **Idempotência:** feita **no código** (checa `wamid` antes de inserir). Não há índice `UNIQUE` em `mensagens.wamid` porque o legado tem duplicados/nulos — criar o índice quebraria.
 - **`statuses` ignorados:** recibos de entrega/leitura dos nossos envios não são processados na v1.
 
-### 10.3. Reaproveitamento da tabela `mensagens`
+### 10.3. Fluxo de integração interna
 
-Não foi criada tabela nova. A `mensagens` (legado do bot removido) já tem o formato certo: `direcao`, `numero_whatsapp`, `tipo`, `conteudo`, `nome_arquivo`, `wamid`, `timestamp_meta` (em **milissegundos**). O webhook grava inbound aqui; o `nome_perfil` (push name) vai em `nome_empresa`, seguindo a convenção legada. A tabela não tem coluna para mídia/payload bruto — esses campos são descartados.
+```mermaid
+sequenceDiagram
+    participant A as Automação interna (n8n/bot)
+    participant I as inbox/app.py
+    participant SB as Supabase (mensagens)
 
-### 10.4. Conversa por número (não por empresa)
+    A->>I: POST /api/internal/mensagem + Bearer token
+    I->>I: valida INBOX_INTERNAL_TOKEN
+    I->>I: normaliza body (numero, direcao, conteudo, wamid)
+    I->>SB: wamid já existe?
+    alt novo
+        I->>SB: INSERT direcao='inbound' ou 'outbound'
+    else duplicado
+        I-->>I: ignora
+    end
+    I-->>A: { ok: true, status: inserido|duplicado }
+```
+
+Esse endpoint existe para integrações server-to-server e não deve ser chamado pelo navegador. A autenticação é feita por `INBOX_INTERNAL_TOKEN`, enviado como `Authorization: Bearer ...` ou `X-Internal-Token`. No bot de agendamentos, o n8n usa `ASO_INBOX_SYNC_URL` e `ASO_INBOX_SYNC_TOKEN`; o token precisa ser o mesmo valor configurado no inbox.
+
+### 10.4. Reaproveitamento da tabela `mensagens`
+
+Não foi criada tabela nova. A `mensagens` (legado do bot removido) já tem o formato certo: `direcao`, `numero_whatsapp`, `tipo`, `conteudo`, `nome_arquivo`, `wamid`, `timestamp_meta` (em **milissegundos**). O webhook da Meta grava inbound aqui; a API interna pode gravar `inbound` ou `outbound`. O `nome_perfil`/`nome_empresa` vai em `nome_empresa`, seguindo a convenção legada. A tabela não tem coluna para mídia/payload bruto — esses campos são descartados.
+
+### 10.5. Conversa por número (não por empresa)
 
 A chave de agrupamento é o **número de telefone**, como no WhatsApp. A empresa é só um rótulo resolvido na leitura a partir de `asos_enviados` (campo `nome_empresa`). Um número pode carregar N empresas (todas viram etiquetas) e continua sendo **uma thread só**. Sem match → thread aparece como "não associada".
 
 **Tolerância ao 9º dígito:** a Meta às vezes entrega o número sem o nono dígito. `variantes_numero()` gera as duas formas (com e sem o 9) e o casamento usa `in.(...)`; `chave_conversa()` normaliza para a forma mais longa, garantindo que envio e resposta caiam na mesma conversa.
 
-### 10.5. Dashboard e deploy
+### 10.6. Dashboard e deploy
 
 - **CRM (SPA de 3 abas)**: a raiz (`/`) serve uma single-page app que consome uma **API JSON própria** do backend:
   - `GET /api/dashboard?inicio&fim&empresa` — KPIs (total, hoje, média/empresa, média diária, empresas atendidas), série de 30 dias e top empresas (gráficos **SVG inline**, sem CDN), recentes. Calculado de `asos_enviados`.
-  - `GET /api/conversas` + `GET /api/conversa/{numero}` — conversas por número (timeline mesclando `asos_enviados` e `mensagens`). Envios renderizados como o cliente recebeu: card do PDF + corpo do template (`{{1}}`=empresa, `{{2}}`=data), agrupando os N ASOs de um mesmo envio numa bolha.
+  - `GET /api/conversas` + `GET /api/conversa/{numero}` — conversas por número (timeline mesclando `asos_enviados` e `mensagens`). Envios do pipeline aparecem como card do PDF + corpo do template (`{{1}}`=empresa, `{{2}}`=data), agrupando os N ASOs de um mesmo envio numa bolha. Mensagens gravadas pela API interna aparecem conforme `direcao`: `inbound` à esquerda e `outbound` à direita.
   - `GET /api/asos?status&q` — lista Enviados/Pendentes/Todos de `asos_enviados`.
   O front nunca fala com o Supabase direto; a `service_role` fica no backend. `_get_all` pagina em blocos grandes (o projeto Supabase não limita a 1000/req), então cada aba carrega em ~1s.
-- **Deploy:** container na rede `n8n_default`, atrás do Traefik (`certresolver=mytlschallenge`), host `inbox.srv1564091.hstgr.cloud`. Dois routers no mesmo serviço: `/webhook` **sem** auth (a Meta não manda credenciais) e o resto com **Basic Auth** (middleware do Traefik). Código montado por volume `:ro` — `git pull` atualiza sem rebuild.
+- **Deploy:** container na rede `n8n_default`, atrás do Traefik (`certresolver=mytlschallenge`), host `inbox.srv1564091.hstgr.cloud`. Três rotas no mesmo serviço: `/webhook` **sem** auth (a Meta não manda credenciais), `/api/internal/*` **sem Basic Auth mas com token interno**, e o resto com **Basic Auth** (middleware do Traefik). Código montado por volume `:ro`; após `git pull`, use `docker compose up -d --build` em `inbox/` para garantir que imagem/serviço subiram com as variáveis atuais.
 
 ---
 

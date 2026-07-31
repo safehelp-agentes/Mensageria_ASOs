@@ -5,15 +5,17 @@
 # Rede:        n8n_default  (mesma do stack n8n/Traefik — externa)
 # certresolver: mytlschallenge   |   entrypoint: websecure
 #
-# Dois routers no MESMO serviço:
-#   - inbox-webhook  → /webhook          SEM auth (a Meta não manda credenciais)
-#   - inbox-dash     → resto do site     COM Basic Auth (middleware inbox-auth)
+# Três routers no MESMO serviço:
+#   - inbox-webhook   → /webhook          SEM auth (a Meta não manda credenciais)
+#   - inbox-internal  → /api/internal     SEM Basic Auth; exige INBOX_INTERNAL_TOKEN
+#   - inbox-dash      → resto do site     COM Basic Auth (middleware inbox-auth)
 #
 # Primeiro uso (na VPS):
 #   cd /opt/safework/envio_ASO/inbox
 #   docker compose up -d --build
-# Atualizar código depois: git pull  (o volume :ro reflete na hora; sem rebuild)
-# Só rebuilda se mudar inbox/requirements.txt:  docker compose up -d --build
+# Atualizar código depois:
+#   cd /opt/safework/envio_ASO && git pull
+#   cd /opt/safework/envio_ASO/inbox && docker compose up -d --build
 # =============================================================================
 
 services:
@@ -43,6 +45,7 @@ services:
       - "traefik.http.routers.inbox-webhook.priority=100"
       - "traefik.http.routers.inbox-webhook.service=inbox-svc"
 
+      # ── Router da API interna (SEM Basic Auth; protegido por token Bearer) ──
       - "traefik.http.routers.inbox-internal.rule=Host(`inbox.srv1564091.hstgr.cloud`) && PathPrefix(`/api/internal`)"
       - "traefik.http.routers.inbox-internal.entrypoints=websecure"
       - "traefik.http.routers.inbox-internal.tls.certresolver=mytlschallenge"

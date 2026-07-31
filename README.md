@@ -228,6 +228,7 @@ Serviço **read-only** e **separado do pipeline** (pasta `inbox/`, mas o produto
 Um único serviço FastAPI com **webhook** + **SPA de 3 abas**:
 
 - **Webhook da Meta** (`GET/POST /webhook`) — recebe as respostas dos clientes e grava na tabela `mensagens` (`direcao='inbound'`). Idempotente por `wamid`. O pipeline de envio **não é alterado**.
+- **Integração interna** (`POST /api/internal/mensagem`) — permite que outras automações autorizadas registrem mensagens no mesmo inbox. Hoje é usado pelo bot de agendamentos para espelhar mensagens inbound/outbound no CRM.
 - **Dashboard** (`/api/dashboard`) — KPIs (total enviados, hoje, média por empresa, média diária, empresas atendidas), gráfico dos últimos 30 dias e por empresa (SVG inline, sem CDN), tabela de recentes. Filtros de período e empresa.
 - **Conversas** (`/api/conversas`, `/api/conversa/{numero}`) — chat estilo WhatsApp por número; envios aparecem como o cliente recebeu (card do PDF + corpo do template com empresa/data).
 - **ASOs** (`/api/asos`) — tabela de ASOs Enviados/Pendentes/Todos com busca.
@@ -253,10 +254,57 @@ docker compose up -d --build
 ```
 
 - Host: `https://inbox.srv1564091.hstgr.cloud` (rede `n8n_default`, certresolver `mytlschallenge`).
-- Traefik: `/webhook` **sem** auth (a Meta não manda credenciais); resto com **Basic Auth**.
+- Traefik: `/webhook` **sem** auth (a Meta não manda credenciais); `/api/internal/*` **sem Basic Auth**, mas protegido por token interno; resto com **Basic Auth**.
 - No painel Meta: Callback URL `https://inbox.srv1564091.hstgr.cloud/webhook`, colar o `WEBHOOK_VERIFY_TOKEN` e **assinar o campo `messages`**.
 
 > A tabela `mensagens` não tem coluna para mídia/payload bruto — o Inbox guarda tipo, legenda e nome do arquivo, mas não baixa a mídia em si.
+
+### Integração com outras automações
+
+O endpoint interno registra mensagens diretamente na tabela `mensagens`:
+
+```http
+POST /api/internal/mensagem
+Authorization: Bearer <INBOX_INTERNAL_TOKEN>
+Content-Type: application/json
+```
+
+Payload aceito:
+
+```json
+{
+  "direcao": "inbound",
+  "numero": "5542999999999",
+  "tipo": "text",
+  "conteudo": "mensagem do cliente",
+  "nome_empresa": "SafeHelp - Agendamento",
+  "wamid": "id-unico-opcional",
+  "timestamp_ms": 1784637200000
+}
+```
+
+Campos importantes:
+
+- `direcao`: `inbound` para cliente -> automação, `outbound` para automação -> cliente.
+- `numero`: telefone em formato normalizado, preferencialmente com DDI `55`.
+- `wamid`: opcional, mas quando enviado torna a gravação idempotente.
+- `timestamp_ms`: timestamp em milissegundos. Se ausente, a leitura ainda usa `created_at`.
+
+Para o bot de agendamentos no n8n, configure no `/docker/n8n/bot.env`:
+
+```env
+ASO_INBOX_SYNC_URL=https://inbox.srv1564091.hstgr.cloud/api/internal/mensagem
+ASO_INBOX_SYNC_TOKEN=<mesmo valor do INBOX_INTERNAL_TOKEN>
+```
+
+Depois de editar `bot.env`, recrie os containers para recarregar `env_file`:
+
+```bash
+cd /docker/n8n
+docker compose up -d --no-deps --force-recreate n8n n8n-worker
+```
+
+`docker compose restart` pode não ser suficiente para variáveis novas.
 
 ---
 
@@ -304,6 +352,7 @@ Todas as variáveis vivem no `.env`. Use `.env.example` como base.
 | Variável | Obrigatório | Descrição |
 |---|---|---|
 | `WEBHOOK_VERIFY_TOKEN` | sim | Verify token do webhook da Meta. O **mesmo** valor vai no painel Meta (WhatsApp → Configuration → Webhook). Gere com `python -c "import secrets; print('safework_inbox_' + secrets.token_urlsafe(24))"` |
+| `INBOX_INTERNAL_TOKEN` | sim, para integrações internas | Token Bearer usado por `POST /api/internal/mensagem`. Deve ser longo, aleatório e igual ao `ASO_INBOX_SYNC_TOKEN` configurado no n8n quando o bot de agendamento for espelhar mensagens no inbox. Gere com `python -c "import secrets; print(secrets.token_urlsafe(48))"` |
 
 O login do dashboard **não** usa variável de ambiente — é feito por **Basic Auth no Traefik** (usuário/senha no label `basicauth.users` do `inbox/docker-compose.yml`). O dashboard lê o Supabase pelo backend com a `service_role`; nada de credencial no browser.
 

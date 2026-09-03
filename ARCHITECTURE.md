@@ -26,14 +26,13 @@ Para visão de produto e como rodar, veja o [README.md](README.md).
 ```mermaid
 graph LR
     subgraph SafeWork["🖥️ VPS Hostinger — /opt/safework"]
-        Cron[⏰ cron] --> Main[main.py]
+        Timer[⏰ systemd timer] --> Main[main.py]
     end
 
     subgraph Externos["☁️ Serviços externos"]
         SOC[(📋 SOC<br/>Exporta Dados + WS)]
         Meta[(💬 Meta Cloud API<br/>WhatsApp Business)]
         SB[(🗄️ Supabase<br/>PostgreSQL)]
-        Gmail[(📧 Gmail SMTP)]
     end
 
     subgraph Consumo["👀 Consumo"]
@@ -43,7 +42,6 @@ graph LR
     Main -->|"1. lista empresas<br/>2. busca ASOs<br/>3. baixa PDFs"| SOC
     Main -->|"4. upload + send"| Meta
     Main -->|"5. persiste estado (dedup)"| SB
-    Main -->|"6. relatório de erros"| Gmail
     Meta -->|"PDFs"| Empresas
 ```
 
@@ -53,39 +51,39 @@ graph LR
 
 ## 2. Fluxo de execução do `main.py`
 
-Toda execução é determinística e segue **sete etapas numeradas explicitamente no código-fonte**:
+Toda execução é determinística e segue **cinco etapas numeradas explicitamente no código-fonte**:
 
 ```mermaid
 flowchart TD
-    Start([🚀 python main.py]) --> Prep[Prepara diretórios<br/>limpa temp_asos]
-    Prep --> E1[1. buscar_chaves_enviadas<br/>Supabase: asos_enviados WHERE enviado=true]
-    E1 --> E2{2. coletar_asos_por_data<br/>para cada empresa ativa}
-    E2 --> Inad{empresa_inadimplente?<br/>exportador 200410}
-    Inad -->|Sim OU erro na consulta| Skip[❌ Pulada<br/>sem buscar exames]
-    Skip --> Aviso[registrar em<br/>bloqueios_inadimplencia]
-    Aviso --> E2
-    Inad -->|Não| Busca[busca ASOs da data<br/>no SOC]
+    Start([🚀 python main.py]) --> Conn[verificar_conectividade<br/>Supabase — aborta + alerta WhatsApp se falhar]
+    Conn --> Prep[Prepara diretórios + limpa temp_asos<br/>calcula janela de JANELA_DIAS]
+    Prep --> E1[1. buscar_chaves_enviadas + buscar_asos_pendentes<br/>Supabase, filtrado pela janela de data_emissao]
+    E1 --> E2{2. coletar_asos_por_data<br/>para cada empresa}
+    E2 --> Bloq{em EMPRESAS_BLOQUEADAS?}
+    Bloq -->|Sim| E2
+    Bloq -->|Não| Inad{empresa_inadimplente?<br/>exportador 200410}
+    Inad -->|Sim OU erro na consulta| Skip[❌ Pulada + registrada<br/>em bloqueios_inadimplencia]
+    Skip --> E2
+    Inad -->|Não| Busca[busca ASOs da janela<br/>no SOC]
     Busca --> E2
     E2 -->|fim do laço| Save[salvar_listagem_asos<br/>output/saida_asos/*.json]
-    Save --> E3[3. filtrar_nao_enviados<br/>remove duplicatas + chaves já enviadas]
-    E3 --> E4{4. separar_por<br/>assinatura}
-    E4 -->|sem assinatura| E5[5. registrar_aso_pendente<br/>Supabase: enviado=false]
-    E4 -->|assinados| E6
-    E5 --> E6[6. agrupar_por_empresa]
-    E6 --> Loop{Para cada<br/>empresa}
-    Loop --> DL[baixar_pdfs_empresa<br/>SOC SOAP → PDF/ZIP]
-    DL --> Contatos[buscar_contatos_empresa<br/>SOC: telefones]
-    Contatos --> Resolve[resolver_destino_envio<br/>número real OU teste]
+    Save --> E3[3. filtrar_nao_enviados<br/>remove já enviados + dedup local]
+    E3 --> E4[4. agrupar_por_empresa + processar]
+    E4 --> Loop{Para cada<br/>empresa}
+    Loop --> Contato[buscar_contatos_empresa<br/>exportador 193815]
+    Contato --> DL[baixar_pdfs_empresa<br/>SOC SOAP → PDF/ZIP]
+    DL --> Resolve[resolver_destino_envio<br/>número real OU teste]
     Resolve --> Guard{ENVIO_REAL<br/>EMPRESAS?}
     Guard -->|false + número real| Abort[❌ BLOQUEIO<br/>DE SEGURANÇA]
-    Guard -->|ok| Send[enviar_pdfs_empresa_meta<br/>1º PDF: template<br/>demais: documento]
-    Send --> Mark[marcar_aso_enviado]
+    Guard -->|ok| Send[enviar_pdfs_empresa_meta<br/>PDFs unidos + template]
+    Send -->|sucesso| Mark[marcar_aso_enviado]
+    Send -->|falha| Pend[salvar_aso_pendente<br/>enviado=false]
     Mark --> Loop
-    Loop -->|fim do laço| E7[7. salvar resumo<br/>output/saida_asos/resumo_execucao.json]
-    Abort --> Erro[registrar_erro]
-    Erro --> Loop
-    E7 --> Email[enviar_email_erros<br/>se houver erros]
-    Email --> End([✅ fim])
+    Pend --> Loop
+    Abort --> Loop
+    Loop -->|fim do laço| Aviso[aviso de inadimplência<br/>WhatsApp → META_NUMERO_TESTE]
+    Aviso --> E5[5. salvar resumo<br/>output/saida_asos/resumo_execucao.json]
+    E5 --> End([✅ fim])
 
     style Abort fill:#fee,stroke:#c33,stroke-width:2px
     style Skip fill:#fee,stroke:#c33,stroke-width:2px
@@ -95,8 +93,6 @@ flowchart TD
     style E3 fill:#eef
     style E4 fill:#eef
     style E5 fill:#eef
-    style E6 fill:#eef
-    style E7 fill:#eef
 ```
 
 > 📌 Cada caixa azul é uma etapa numerada explicitamente no `main.py`. Use os números (`# ── N. Descrição ──`) para localizar.
@@ -109,18 +105,14 @@ flowchart TD
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Descoberto: SOC retorna ASO
+    [*] --> Descoberto: SOC retorna ASO (assinado ou não)
     Descoberto --> JaEnviado: chave_aso ∈ chaves_enviadas
-    Descoberto --> Pendente: assinado=false
-    Descoberto --> Pronto: assinado=true
-    Pendente --> Pronto: assinatura concluída<br/>(próxima execução)
-    Pronto --> EmDownload: baixar_pdfs_empresa
-    EmDownload --> ErroDownload: SOAP falhou
+    Descoberto --> EmDownload: baixar_pdfs_empresa
+    EmDownload --> Pendente: SOAP falhou (erro no download)
     EmDownload --> EmEnvio: PDF salvo
-    EmEnvio --> ErroEnvio: Meta retornou erro
+    EmEnvio --> Pendente: Meta retornou erro
     EmEnvio --> Enviado: HTTP 200 + wamid
-    ErroDownload --> [*]: registrado em erros_execucao
-    ErroEnvio --> [*]: registrado em erros_execucao
+    Pendente --> EmDownload: re-tentado na próxima execução<br/>(enquanto dentro da janela do SOC)
     Enviado --> [*]: asos_enviados.enviado=true
     JaEnviado --> [*]: ignorado (idempotência)
 
@@ -131,9 +123,11 @@ stateDiagram-v2
     end note
 
     note right of Pendente
-        Próximas execuções vão re-buscar
-        e mover para Pronto quando
-        a assinatura digital for concluída.
+        Pendente = falha de download ou de envio
+        (asos_enviados.enviado=false). NÃO tem a ver
+        com assinatura: ASOs não assinados também são
+        enviados. É re-tentado enquanto o SOC ainda
+        devolver o ASO na janela de JANELA_DIAS.
     end note
 ```
 
@@ -170,9 +164,7 @@ graph TB
         Meta[src/meta/whatsapp.py<br/>💬 Meta API]
         Int[src/integrations/]
         SBint[supabase.py]
-        Emint[email.py]
         Int --> SBint
-        Int --> Emint
     end
 
     Utils[src/utils/helpers.py<br/>🧰 Retry, números, datas]
@@ -354,23 +346,21 @@ except Exception as e:
 # segue para a próxima empresa
 ```
 
-Erros são acumulados em `erros_execucao` (lista global em `helpers.py`) e disparados por email no `finally` do `main`.
+Cada erro é registrado por `registrar_erro()` — hoje apenas um `print` (visível no `journalctl`). Não há mais acúmulo em lista global nem envio por e-mail. Os únicos avisos que saem por WhatsApp ao `META_NUMERO_TESTE` são o resumo de empresas bloqueadas por inadimplência/erro e o alerta de falha de conexão com o Supabase.
 
 ### Camada de orquestração
 
-O `main()` inteiro está dentro de um `try/except/finally`:
+O `main()` está dentro de um `try/except` que loga e propaga:
 
 ```python
 try:
-    main(usar_ontem=args.ontem)
+    main(usar_ontem=args.ontem, data_especifica=args.data)
 except Exception as e:
     registrar_erro(f"Erro geral na execução: {e}")
-    raise           # propaga para o cron logar
-finally:
-    enviar_email_erros(erros_execucao)   # SEMPRE dispara o email
+    raise           # propaga para o systemd/journalctl logar
 ```
 
-Resultado: **mesmo em crash catastrófico**, o relatório de erros sai.
+Resultado: um crash geral é registrado no log e propagado (o `journalctl` guarda o traceback), sem silenciar a falha.
 
 ---
 

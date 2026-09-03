@@ -29,7 +29,7 @@ Este sistema resolve isso com um **pipeline automático**: todo dia útil busca 
 ## Visão geral da arquitetura
 
 ```
-┌──────────────────────────── PIPELINE (cron diário) ─────────────────────────┐
+┌──────────────────────── PIPELINE (systemd timer, na VPS) ───────────────────┐
 │                                                                              │
 │  main.py ──► SOC REST API ──► lista empresas + ASOs novos                   │
 │      │                                                                       │
@@ -133,7 +133,7 @@ nano .env   # preencha as variáveis (seção abaixo)
 
 ## Pipeline automático
 
-Roda via cron, busca ASOs novos no SOC e entrega no WhatsApp de cada empresa.
+Roda por **systemd timer** na VPS, busca ASOs novos no SOC e entrega no WhatsApp de cada empresa.
 
 ### Execução manual
 
@@ -156,14 +156,13 @@ python main.py --data "09/05/2026"
 - **Empresas bloqueadas (lista fixa):** `EMPRESAS_BLOQUEADAS` no `config.py` — essas empresas são puladas antes de qualquer consulta ao SOC. Edite a lista para bloquear/desbloquear.
 - **Empresas inadimplentes (verificação dinâmica, a cada execução):** antes de buscar os exames de cada empresa, o pipeline consulta o **exportador `200410`** (dados financeiros/contrato). Se **qualquer linha** da empresa vier com `flagClienteInadimplente = "Sim"`, ela não recebe ASO nessa execução. Se a consulta falhar, a empresa também é bloqueada por precaução (fail-safe). Todas as empresas bloqueadas por esse motivo (inadimplência ou erro na consulta) entram num **resumo enviado por WhatsApp ao `META_NUMERO_TESTE`** ao fim da execução.
 
-### Agendamento via cron
+### Agendamento (systemd timer)
 
-```cron
-# Envia ASOs do dia atual às 18h (dias úteis)
-0 18 * * 1-5 cd /opt/safework/envio_ASO && .venv/bin/python main.py >> /var/log/safework/aso.log 2>&1
+Na VPS o pipeline roda por **systemd timer** (`safework-aso.timer` → `safework-aso.service`, `OnCalendar` 07:30/12:00/19:00). A unit precisa de `TimeoutStartSec=0`, senão o run morre no meio e pode causar reenvio. Detalhes de deploy, unidades e comandos em [OPERACAO.md](OPERACAO.md#deploy-do-pipeline-systemd-timer).
 
-# Captura o que ficou de ontem às 8h
-0 8  * * 1-5 cd /opt/safework/envio_ASO && .venv/bin/python main.py --ontem >> /var/log/safework/aso.log 2>&1
+```bash
+systemctl start --no-block safework-aso.service   # roda agora
+journalctl -u safework-aso -f                      # acompanha os logs
 ```
 
 ### Saídas de cada execução
@@ -373,14 +372,7 @@ O login do dashboard **não** usa variável de ambiente — é feito por **Basic
 | `GOOGLE_SHEETS_ID` | sim (--sheets) | ID da planilha Google Sheets conectada ao Forms |
 | `GOOGLE_SHEETS_GID` | sim (--sheets) | GID da aba com as respostas do Forms |
 
-### Alertas por e-mail (opcional)
-
-| Variável | Descrição |
-|---|---|
-| `EMAIL_REMETENTE` | Conta Gmail que envia o relatório |
-| `EMAIL_SENHA_APP` | [App Password](https://myaccount.google.com/apppasswords) do Gmail |
-| `EMAIL_DESTINO` | Destinatário do relatório de erros |
-| `EMAIL_ENVIAR` | `true`/`false`. Padrão: `false` |
+> **Sem relatório por e-mail.** O envio de erros por e-mail foi removido — `registrar_erro()` hoje só faz `print` (visível no `journalctl`). Os únicos avisos ativos saem por WhatsApp ao `META_NUMERO_TESTE`: o resumo de empresas bloqueadas por inadimplência/erro e o alerta de falha de conexão com o Supabase.
 
 ---
 
@@ -421,8 +413,7 @@ envio_ASO/
     │   └── manager.py             # Chave de identidade ASO, deduplicação
     │
     ├── integrations/
-    │   ├── supabase.py            # PostgREST — estado de envio dos ASOs (dedup/idempotência)
-    │   └── email.py               # Relatório de erros via SMTP Gmail
+    │   └── supabase.py            # PostgREST — estado de envio dos ASOs (dedup/idempotência)
     │
     └── utils/
         └── helpers.py             # Retry com backoff, sanitização, detecção PDF/ZIP
@@ -442,7 +433,7 @@ git pull origin main
 ./deploy.sh
 ```
 
-O pipeline roda por cron (não é um serviço contínuo) — não há containers próprios para verificar. Basta conferir os logs da última execução em `/var/log/safework/aso.log`.
+O pipeline roda por **systemd timer** (não é um serviço contínuo) — não há containers próprios para verificar. Veja os logs da última execução com `journalctl -u safework-aso -f`. Deploy, unidades systemd e operação em detalhe: [OPERACAO.md](OPERACAO.md).
 
 ---
 
